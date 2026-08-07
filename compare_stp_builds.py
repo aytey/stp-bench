@@ -11,6 +11,7 @@ import argparse
 import csv
 import os
 import statistics
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -18,8 +19,8 @@ from pathlib import Path
 from benchlib import (
     BOLD, DIM, RED, GREEN, YELLOW, CYAN, MAGENTA, RST,
     CL, HIDE, SHOW,
-    Result, ResultLog, fmt_duration,
-    collect_smt2_files, load_file_list, shorten,
+    Result, ResultLog, fmt_duration, score_table,
+    collect_smt2_files, load_file_list, load_medians, pair_files, shorten,
 )
 from benchlib.runner import run_one, run_pool
 
@@ -282,6 +283,26 @@ class TUI:
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
+def get_git_hash(binary_path):
+    """Get the short git hash from the repo containing a solver binary."""
+    # Walk up from build/stp to find the repo root
+    repo_dir = Path(binary_path).resolve().parent
+    while repo_dir != repo_dir.parent:
+        if (repo_dir / ".git").exists():
+            break
+        repo_dir = repo_dir.parent
+    else:
+        return "unknown"
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(repo_dir), "rev-parse", "--short", "HEAD"],
+            capture_output=True, text=True, timeout=5,
+        )
+        return result.stdout.strip() if result.returncode == 0 else "unknown"
+    except Exception:
+        return "unknown"
+
+
 def main():
     parser = argparse.ArgumentParser(description="Compare STP build performance: master vs incremental-solving")
     parser.add_argument("--dir", type=Path, nargs="*", default=[DEFAULT_DIR])
@@ -292,16 +313,28 @@ def main():
                         help="Number of runs per file per solver (default: 3)")
     parser.add_argument("--wall-hours", type=float, default=DEFAULT_WALL_HOURS)
     parser.add_argument("--workers", type=int, default=DEFAULT_WORKERS)
-    parser.add_argument("--output", type=Path, default=Path("build_comparison.csv"))
+    parser.add_argument("--output", type=Path, default=None,
+                        help="Output CSV (default: auto-generated with git hashes)")
+    parser.add_argument("--incremental", action="store_true",
+                        help="Feed input via stdin line-by-line (SMT-COMP trace executor style)")
     args = parser.parse_args()
 
-    # Validate solvers
+    # Validate solvers and get git hashes
     solver_list = []
+    git_hashes = {}
     for name, (path, extra_args) in SOLVERS.items():
         p = str(path.resolve())
         if not os.path.isfile(p):
             print(f"Warning: {name} binary not found at {p} (not yet built?)", file=sys.stderr)
+        h = get_git_hash(p)
+        git_hashes[name] = h
         solver_list.append((name, p, extra_args))
+        print(f"  {name}: {p}  (git {h})")
+
+    # Auto-generate output filename with git hashes
+    if args.output is None:
+        hash_parts = "_vs_".join(git_hashes.values())
+        args.output = Path(f"build_comparison_{hash_parts}.csv")
 
     # Collect files
     if args.file_list:
@@ -328,8 +361,9 @@ def main():
     total_tasks = len(tasks)
     solver_names = [name for name, _, _ in solver_list]
 
+    mode = "incremental (stdin)" if args.incremental else "batch (file arg)"
     print(f"Found {len(files):,} files x {len(solver_list)} builds x {args.runs} runs = {total_tasks:,} tasks")
-    print(f"Workers: {args.workers}, timeout: {args.timeout:.0f}s, wall budget: {args.wall_hours}h")
+    print(f"Workers: {args.workers}, timeout: {args.timeout:.0f}s, wall budget: {args.wall_hours}h, mode: {mode}")
 
     wall_seconds = args.wall_hours * 3600
     start_time = time.monotonic()
@@ -347,7 +381,8 @@ def main():
 
     try:
         completed_count = run_pool(tasks, args.workers, args.timeout, on_result,
-                                   wall_seconds=wall_seconds)
+                                   wall_seconds=wall_seconds,
+                                   incremental=args.incremental)
     except KeyboardInterrupt:
         print("\n\nInterrupted by user.")
         completed_count = tui.completed
@@ -437,7 +472,8 @@ def main():
 
         try:
             reval_completed = run_pool(reval_tasks, args.workers, REVALIDATE_TIMEOUT,
-                                       on_reval_result)
+                                       on_reval_result,
+                                       incremental=args.incremental)
         except KeyboardInterrupt:
             print("\n\nRevalidation interrupted.")
             reval_completed = reval_tui.completed
@@ -463,6 +499,17 @@ def main():
     if revalidate_files:
         print(f"  Revalidation: {reval_output}")
     print(f"{'=' * 72}")
+
+    # Competition-style score tables
+    print()
+    if revalidate_files:
+        from benchlib import load_combined
+        final_data = load_combined(str(args.output), str(reval_output))
+    else:
+        final_data = load_medians(str(args.output))
+    final_paired = pair_files(final_data, solver_names[0], solver_names[1])
+    for vto in [24, 120]:
+        score_table(final_paired, solver_names[0], solver_names[1], vto)
 
 
 if __name__ == "__main__":

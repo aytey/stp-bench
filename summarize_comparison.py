@@ -19,7 +19,7 @@ from collections import Counter
 
 from benchlib import (
     BOLD, RED, GREEN, YELLOW, CYAN, MAGENTA, RST,
-    load_medians, load_combined, pair_files, shorten, extract_logic,
+    load_medians, load_combined, pair_files, shorten, extract_logic, score_table,
 )
 
 
@@ -188,10 +188,17 @@ def summarize(label, paired, solver_a, solver_b):
         print()
 
 
+def print_score_tables(paired, solver_a, solver_b):
+    """Print competition-style score tables at 24s and 2m virtual timeouts."""
+    for vto in [24, 120]:
+        score_table(paired, solver_a, solver_b, vto)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Summarize a build comparison run")
     parser.add_argument("main_csv", help="Main pass CSV")
-    parser.add_argument("reval_csv", help="Revalidation CSV")
+    parser.add_argument("reval_csv", nargs="?", default=None,
+                        help="Revalidation CSV (optional)")
     parser.add_argument("--solver-a", default="master", help="First solver (default: master)")
     parser.add_argument("--solver-b", default="incremental", help="Second solver (default: incremental)")
     parser.add_argument("--by-theory", action="store_true", help="Show per-solver summary grouped by theory")
@@ -203,16 +210,18 @@ def main():
     main_paired = pair_files(main_data, args.solver_a, args.solver_b)
     summarize("Main pass only", main_paired, args.solver_a, args.solver_b)
 
-    if not os.path.exists(args.reval_csv):
-        return
+    if args.reval_csv and os.path.exists(args.reval_csv):
+        # Summary 2: combined (revalidation replaces main)
+        combined = load_combined(args.main_csv, args.reval_csv)
+        combined_paired = pair_files(combined, args.solver_a, args.solver_b)
+        summarize("Combined (revalidation replaces main pass)", combined_paired, args.solver_a, args.solver_b)
 
-    # Summary 2: combined (revalidation replaces main)
-    combined = load_combined(args.main_csv, args.reval_csv)
-    combined_paired = pair_files(combined, args.solver_a, args.solver_b)
-    summarize("Combined (revalidation replaces main pass)", combined_paired, args.solver_a, args.solver_b)
+        if args.by_theory:
+            summarize_by_theory(combined_paired, args.solver_a, args.solver_b)
 
-    if args.by_theory:
-        summarize_by_theory(combined_paired, args.solver_a, args.solver_b)
+        print_score_tables(combined_paired, args.solver_a, args.solver_b)
+    else:
+        print_score_tables(main_paired, args.solver_a, args.solver_b)
 
 
 if __name__ == "__main__":
