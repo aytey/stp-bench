@@ -113,10 +113,29 @@ def run_one_incremental(solver_name, solver_bin, extra_args, path, run, timeout)
         elapsed = time.monotonic() - t0
         return Result(path, solver_name, run, elapsed, "error", -1, 0, timeout)
 
+    pipe_broken = False
+
+    def send(text):
+        nonlocal pipe_broken
+        if pipe_broken:
+            return False
+        try:
+            proc.stdin.write(text)
+            proc.stdin.flush()
+            return True
+        except (BrokenPipeError, OSError):
+            pipe_broken = True
+            return False
+
     try:
         # Send (set-option :print-success true) first
-        proc.stdin.write("(set-option :print-success true)\n")
-        proc.stdin.flush()
+        if not send("(set-option :print-success true)\n"):
+            proc.wait()
+            elapsed = time.monotonic() - t0
+            sig = -proc.returncode if proc.returncode < 0 else 0
+            answer = "crash" if proc.returncode < 0 else "error"
+            return Result(path, solver_name, run, elapsed, answer, proc.returncode, sig, timeout)
+
         resp = _read_line_timeout(proc, deadline)
         if resp is None:
             proc.kill()
@@ -129,8 +148,8 @@ def run_one_incremental(solver_name, solver_bin, extra_args, path, run, timeout)
             if time.monotonic() >= deadline:
                 break
 
-            proc.stdin.write(cmd + "\n")
-            proc.stdin.flush()
+            if not send(cmd + "\n"):
+                break
 
             if is_check_sat:
                 resp = _read_line_timeout(proc, deadline)
@@ -138,22 +157,19 @@ def run_one_incremental(solver_name, solver_bin, extra_args, path, run, timeout)
                     break
                 if resp in ("sat", "unsat", "unknown"):
                     last_check_sat_answer = resp
-                # ignore other responses (malformed)
             else:
                 resp = _read_line_timeout(proc, deadline)
                 if resp is None:
                     break
-                # expect "success", but don't fail on other responses
 
         # Send exit
-        if time.monotonic() < deadline:
-            try:
-                proc.stdin.write("(exit)\n")
-                proc.stdin.flush()
-            except BrokenPipeError:
-                pass
+        if not pipe_broken and time.monotonic() < deadline:
+            send("(exit)\n")
 
-        proc.stdin.close()
+        try:
+            proc.stdin.close()
+        except (BrokenPipeError, OSError):
+            pass
         try:
             proc.wait(timeout=max(0.1, deadline - time.monotonic()))
         except subprocess.TimeoutExpired:
