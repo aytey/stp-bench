@@ -7,36 +7,10 @@ Usage:
 """
 
 import argparse
-import csv
 import statistics
-import sys
+from collections import Counter
 
-
-def load(path, solver):
-    per_file = {}
-    with open(path) as f:
-        for row in csv.DictReader(f):
-            if row["solver"] != solver:
-                continue
-            p = row["path"]
-            per_file.setdefault(p, []).append({
-                "elapsed": float(row["elapsed"]),
-                "answer": row["answer"],
-            })
-    results = {}
-    for p, runs in per_file.items():
-        answers = [r["answer"] for r in runs]
-        ans = max(set(answers), key=answers.count)
-        med = statistics.median(r["elapsed"] for r in runs)
-        results[p] = {"answer": ans, "elapsed": med}
-    return results
-
-
-def shorten(p):
-    for tag in ("non-incremental/", "incremental/"):
-        if tag in p:
-            return p.split(tag, 1)[-1]
-    return p.split("/")[-1]
+from benchlib import load_medians, shorten
 
 
 def main():
@@ -46,23 +20,25 @@ def main():
     parser.add_argument("--solver", default="incremental", help="Solver name to compare (default: incremental)")
     args = parser.parse_args()
 
-    old = load(args.old, args.solver)
-    new = load(args.new, args.solver)
+    # Load and filter to the requested solver
+    old_all = load_medians(args.old)
+    new_all = load_medians(args.new)
+    old = {p: v for (p, s), v in old_all.items() if s == args.solver}
+    new = {p: v for (p, s), v in new_all.items() if s == args.solver}
     common = set(old.keys()) & set(new.keys())
 
     print(f"Old: {len(old):,} files    New: {len(new):,} files    Common: {len(common):,} files")
     print()
 
     # Per-run summary (common files only)
-    from collections import Counter
     for label, data in [("Old", old), ("New", new)]:
         common_data = {k: v for k, v in data.items() if k in common}
         c = Counter(v["answer"] for v in common_data.values())
         times = [v["elapsed"] for v in common_data.values() if v["answer"] in ("sat", "unsat")]
         avg = statistics.mean(times) if times else 0
         med = statistics.median(times) if times else 0
-        print(f"  {label}:  sat={c['sat']:>6}  unsat={c['unsat']:>5}  "
-              f"TO={c['timeout']:>4}  err={c['error']:>4}  crash={c['crash']:>3}  "
+        print(f"  {label}:  sat={c.get('sat',0):>6}  unsat={c.get('unsat',0):>5}  "
+              f"TO={c.get('timeout',0):>4}  err={c.get('error',0):>4}  crash={c.get('crash',0):>3}  "
               f"avg={avg:.3f}s  median={med:.3f}s")
 
     print()
@@ -121,10 +97,8 @@ def main():
     # New timeouts (solved in old, timed out in new)
     new_timeouts = []
     for p in common:
-        o_ans = old[p]["answer"]
-        n_ans = new[p]["answer"]
-        if o_ans in ("sat", "unsat") and n_ans == "timeout":
-            new_timeouts.append((old[p]["elapsed"], o_ans, p))
+        if old[p]["answer"] in ("sat", "unsat") and new[p]["answer"] == "timeout":
+            new_timeouts.append((old[p]["elapsed"], old[p]["answer"], p))
 
     if new_timeouts:
         new_timeouts.sort()
@@ -136,10 +110,8 @@ def main():
     # Recovered timeouts (timed out in old, solved in new)
     recovered = []
     for p in common:
-        o_ans = old[p]["answer"]
-        n_ans = new[p]["answer"]
-        if o_ans == "timeout" and n_ans in ("sat", "unsat"):
-            recovered.append((new[p]["elapsed"], n_ans, p))
+        if old[p]["answer"] == "timeout" and new[p]["answer"] in ("sat", "unsat"):
+            recovered.append((new[p]["elapsed"], new[p]["answer"], p))
 
     if recovered:
         recovered.sort()
