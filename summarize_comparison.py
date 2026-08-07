@@ -12,63 +12,19 @@ Usage:
 """
 
 import argparse
-import csv
+import os
 import statistics
 import sys
 from collections import Counter
 
-
-def load_medians(path):
-    """Load a CSV and compute per-(file, solver) median elapsed and majority answer."""
-    raw = {}
-    with open(path) as f:
-        for row in csv.DictReader(f):
-            key = (row["path"], row["solver"])
-            raw.setdefault(key, []).append({
-                "elapsed": float(row["elapsed"]),
-                "answer": row["answer"],
-                "timeout": float(row["timeout"]),
-            })
-
-    results = {}
-    for (path, solver), runs in raw.items():
-        answers = [r["answer"] for r in runs]
-        ans = max(set(answers), key=answers.count)
-        med = statistics.median(r["elapsed"] for r in runs)
-        to = runs[0]["timeout"]
-        results[(path, solver)] = {"answer": ans, "elapsed": med, "timeout": to}
-    return results
-
-
-def pair_files(data, solver_a, solver_b):
-    """Group results by file, returning only files with both solvers."""
-    files_a = {p: v for (p, s), v in data.items() if s == solver_a}
-    files_b = {p: v for (p, s), v in data.items() if s == solver_b}
-    common = set(files_a.keys()) & set(files_b.keys())
-    return {p: (files_a[p], files_b[p]) for p in common}
-
-
-def shorten(p):
-    for tag in ("non-incremental/", "incremental/"):
-        if tag in p:
-            return p.split(tag, 1)[-1]
-    return p.split("/")[-1]
-
-
-def extract_logic(p):
-    for tag in ("non-incremental/", "incremental/"):
-        if tag in p:
-            rest = p.split(tag, 1)[-1]
-            return rest.split("/")[0]
-    return "unknown"
+from benchlib import (
+    BOLD, RED, GREEN, YELLOW, CYAN, MAGENTA, RST,
+    load_medians, load_combined, pair_files, shorten, extract_logic,
+)
 
 
 def summarize_by_theory(paired, solver_a, solver_b):
     """Print per-solver summary grouped by theory."""
-    BOLD = "\033[1m"
-    RST = "\033[0m"
-
-    # Group by logic
     by_logic = {}
     for path, (a, b) in paired.items():
         logic = extract_logic(path)
@@ -95,14 +51,6 @@ def summarize_by_theory(paired, solver_a, solver_b):
 
 def summarize(label, paired, solver_a, solver_b):
     """Print a full summary for a set of paired results."""
-    BOLD = "\033[1m"
-    RED = "\033[91m"
-    GREEN = "\033[92m"
-    YELLOW = "\033[93m"
-    CYAN = "\033[96m"
-    MAGENTA = "\033[95m"
-    RST = "\033[0m"
-
     print(f"{BOLD}{'═' * 78}{RST}")
     print(f"{BOLD}  {label}{RST}")
     print(f"{'═' * 78}")
@@ -251,21 +199,15 @@ def main():
 
     main_data = load_medians(args.main_csv)
 
-    # ── Summary 1: main pass only ────────────────────────────────────────
+    # Summary 1: main pass only
     main_paired = pair_files(main_data, args.solver_a, args.solver_b)
     summarize("Main pass only", main_paired, args.solver_a, args.solver_b)
 
-    import os
     if not os.path.exists(args.reval_csv):
         return
 
-    reval_data = load_medians(args.reval_csv)
-
-    # ── Summary 2: combined (revalidation replaces main) ─────────────────
-    combined = dict(main_data)
-    for key, val in reval_data.items():
-        combined[key] = val  # replace any main-pass entry
-
+    # Summary 2: combined (revalidation replaces main)
+    combined = load_combined(args.main_csv, args.reval_csv)
     combined_paired = pair_files(combined, args.solver_a, args.solver_b)
     summarize("Combined (revalidation replaces main pass)", combined_paired, args.solver_a, args.solver_b)
 

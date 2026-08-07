@@ -7,62 +7,10 @@ Usage:
 """
 
 import argparse
-import csv
 import os
-import statistics
 import subprocess
-import sys
 
-
-def load_combined(main_csv, reval_csv):
-    """Load main + revalidation CSVs, reval replaces main for same (path, solver)."""
-    raw = {}
-    for path in [main_csv, reval_csv]:
-        with open(path) as f:
-            for row in csv.DictReader(f):
-                key = (row["path"], row["solver"])
-                raw.setdefault(key, []).append({
-                    "elapsed": float(row["elapsed"]),
-                    "answer": row["answer"],
-                    "timeout": float(row["timeout"]),
-                })
-    # For reval, it overwrites main, so just load main first then reval
-    raw_main = {}
-    with open(main_csv) as f:
-        for row in csv.DictReader(f):
-            key = (row["path"], row["solver"])
-            raw_main.setdefault(key, []).append({
-                "elapsed": float(row["elapsed"]),
-                "answer": row["answer"],
-            })
-
-    raw_reval = {}
-    with open(reval_csv) as f:
-        for row in csv.DictReader(f):
-            key = (row["path"], row["solver"])
-            raw_reval.setdefault(key, []).append({
-                "elapsed": float(row["elapsed"]),
-                "answer": row["answer"],
-            })
-
-    combined = {}
-    all_keys = set(raw_main.keys()) | set(raw_reval.keys())
-    for key in all_keys:
-        runs = raw_reval.get(key, raw_main.get(key, []))
-        answers = [r["answer"] for r in runs]
-        ans = max(set(answers), key=answers.count)
-        med = statistics.median(r["elapsed"] for r in runs)
-        combined[key] = {"answer": ans, "elapsed": med}
-
-    return combined
-
-
-def extract_logic(path):
-    for tag in ("non-incremental/", "incremental/"):
-        if tag in path:
-            rest = path.split(tag, 1)[-1]
-            return rest.split("/")[0]
-    return "unknown"
+from benchlib import load_combined, extract_logic
 
 
 def main():
