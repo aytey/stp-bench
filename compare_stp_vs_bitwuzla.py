@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Compare STP build performance: master vs incremental-solving branch.
-Runs incremental .smt2 files against both builds multiple times, records
-timing, and uses median times for comparison.
+Compare STP (uf branch) vs Bitwuzla on UF benchmarks.
+Runs .smt2 files against both solvers multiple times, records timing,
+and uses median times for comparison.
 
 Output: a CSV with one row per (file, solver, run) triple.
 """
@@ -27,11 +27,11 @@ from benchlib.runner import run_one, run_pool
 # ── Defaults ──────────────────────────────────────────────────────────────────
 
 SOLVERS = {
-    "master":             (Path("/home/avj/clones/stp/master/build/stp"), ["--array-equality"]),
-    "fix_444_adder":      (Path("/home/avj/clones/stp/fix_444_adder_sharing/build/stp"), ["--array-equality"]),
+    "bitwuzla":  (Path("/home/avj/clones/bitwuzla/build/src/main/bitwuzla"), []),
+    "stp":       (Path("/home/avj/clones/stp/uf/build/stp"), ["--uninterpreted-functions", "--array-equality"]),
 }
 
-DEFAULT_DIR = Path("/mnt/baranem/smt2_problems/incremental")
+DEFAULT_DIR = Path("/mnt/baranem/uf_bench")
 
 DEFAULT_TIMEOUT = 30.0  # 30 seconds
 DEFAULT_WALL_HOURS = 24.0
@@ -43,9 +43,9 @@ DEFAULT_RUNS = 3
 
 class TUI:
     # Thresholds for classification
-    WIN_RATIO = 0.5     # incremental is 2x+ faster -> win
-    LOSE_RATIO = 5.0    # incremental is 5x+ slower -> loss
-    MASSIVE_RATIO = 20.0  # incremental is 20x+ slower -> massive loss
+    WIN_RATIO = 0.5     # alt is 2x+ faster -> win
+    LOSE_RATIO = 5.0    # alt is 5x+ slower -> loss
+    MASSIVE_RATIO = 20.0  # alt is 20x+ slower -> massive loss
 
     def __init__(self, total_tasks: int, total_files: int,
                  solver_names: list[str], runs: int):
@@ -210,7 +210,7 @@ class TUI:
         lines = []
         lines.append("")
         lines.append(f"{BOLD}{'═' * 78}{RST}")
-        lines.append(f"{BOLD}  STP Build Comparison: {self._base_name} vs {self._alt_name}  ({self.runs} runs/file){RST}")
+        lines.append(f"{BOLD}  STP vs Bitwuzla (UF benchmarks): {self._base_name} vs {self._alt_name}  ({self.runs} runs/file){RST}")
         lines.append(f"{'═' * 78}")
 
         # Progress
@@ -227,7 +227,7 @@ class TUI:
         lines.append("")
 
         # Per-solver stats
-        hdr = f"  {'Build':<12} {'Runs':>7} {'sat':>7} {'unsat':>7} {'TO':>6} {'err':>5} {'crash':>5} {'avg(s)':>7}"
+        hdr = f"  {'Solver':<12} {'Runs':>7} {'sat':>7} {'unsat':>7} {'TO':>6} {'err':>5} {'crash':>5} {'avg(s)':>7}"
         lines.append(f"{BOLD}{hdr}{RST}")
         lines.append(f"  {'─' * 74}")
         for name in self.solver_names:
@@ -288,7 +288,6 @@ class TUI:
 
 def get_git_hash(binary_path):
     """Get the short git hash from the repo containing a solver binary."""
-    # Walk up from build/stp to find the repo root
     repo_dir = Path(binary_path).resolve().parent
     while repo_dir != repo_dir.parent:
         if (repo_dir / ".git").exists():
@@ -307,7 +306,7 @@ def get_git_hash(binary_path):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Compare STP build performance between two branches")
+    parser = argparse.ArgumentParser(description="Compare STP vs Bitwuzla on UF benchmarks")
     parser.add_argument("--dir", type=Path, nargs="*", default=[DEFAULT_DIR])
     parser.add_argument("--file-list", type=Path, default=None)
     parser.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT,
@@ -337,7 +336,7 @@ def main():
     # Auto-generate output filename with git hashes
     if args.output is None:
         hash_parts = "_vs_".join(git_hashes.values())
-        args.output = Path(f"build_comparison_{hash_parts}.csv")
+        args.output = Path(f"stp_vs_bitwuzla_{hash_parts}.csv")
 
     # Collect files
     if args.file_list:
@@ -365,7 +364,7 @@ def main():
     solver_names = [name for name, _, _ in solver_list]
 
     mode = "incremental (stdin)" if args.incremental else "batch (file arg)"
-    print(f"Found {len(files):,} files x {len(solver_list)} builds x {args.runs} runs = {total_tasks:,} tasks")
+    print(f"Found {len(files):,} files x {len(solver_list)} solvers x {args.runs} runs = {total_tasks:,} tasks")
     print(f"Workers: {args.workers}, timeout: {args.timeout:.0f}s, wall budget: {args.wall_hours}h, mode: {mode}")
 
     wall_seconds = args.wall_hours * 3600
@@ -393,9 +392,6 @@ def main():
         tui.stop()
 
     # ── Revalidation pass ────────────────────────────────────────────────────
-    # Re-run any file where the median ratio was >= 3x either way (or one
-    # build uniquely solved / timed out).  Uses a longer timeout.
-
     REVALIDATE_RATIO = 3.0
     REVALIDATE_TIMEOUT = max(args.timeout * 4, 120.0)
 
