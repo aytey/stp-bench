@@ -1,10 +1,19 @@
 """CSV loading, result data structures, and file pairing."""
 
 import csv
+import json
+import os
 import statistics
 from dataclasses import dataclass
 from pathlib import Path
 from threading import Lock
+
+# Only sat/unsat count as a solver having done the work. `unknown` is
+# deliberately excluded: a solver that bails out on a query it does not
+# support answers `unknown` in milliseconds, and timing that against a solver
+# that actually solves the query measures nothing but the difference between
+# attempting and not attempting.
+CONCLUSIVE_ANSWERS = ("sat", "unsat")
 
 
 @dataclass
@@ -17,6 +26,69 @@ class Result:
     exit_code: int
     signal_num: int
     timeout_used: float
+
+
+def majority_answer(answers):
+    """The most common answer across a set of runs."""
+    return max(set(answers), key=answers.count)
+
+
+def solvers_in_csv(csv_path):
+    """Distinct solver names in a results CSV, in first-appearance order.
+
+    That is completion order, not the order the config listed them in, so
+    prefer `solvers_for_csv` when the baseline needs to come out first.
+    """
+    seen = []
+    with open(csv_path) as f:
+        for row in csv.DictReader(f):
+            if row["solver"] not in seen:
+                seen.append(row["solver"])
+    return seen
+
+
+def manifest_path(csv_path):
+    """Path of the run manifest belonging to a results CSV."""
+    p = Path(csv_path)
+    stem = p.stem
+    for suffix in ("_revalidation", "_answer_disagreements"):
+        if stem.endswith(suffix):
+            stem = stem[:-len(suffix)]
+            break
+    return p.parent / f"{stem}_manifest.json"
+
+
+def load_manifest(csv_path):
+    """The run manifest for a results CSV, or None if it was not written."""
+    try:
+        with open(manifest_path(csv_path)) as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return None
+
+
+def write_manifest(csv_path, manifest):
+    """Record what produced a results CSV, next to it."""
+    path = manifest_path(csv_path)
+    with open(path, "w") as f:
+        json.dump(manifest, f, indent=2)
+        f.write("\n")
+    return path
+
+
+def solvers_for_csv(csv_path):
+    """Solver names for a results CSV, baseline first.
+
+    Rows land in completion order, which says nothing about which solver was
+    the baseline, so use the manifest the run wrote and fall back to CSV
+    order only when there is none.
+    """
+    present = solvers_in_csv(csv_path)
+    manifest = load_manifest(csv_path)
+    if not manifest:
+        return present
+    ordered = [s["name"] for s in manifest.get("solvers", []) if s["name"] in present]
+    return ordered + [n for n in present if n not in ordered]
 
 
 def load_medians(csv_path):
@@ -37,8 +109,7 @@ def load_medians(csv_path):
 
     results = {}
     for (path, solver), runs in raw.items():
-        answers = [r["answer"] for r in runs]
-        ans = max(set(answers), key=answers.count)
+        ans = majority_answer([r["answer"] for r in runs])
         med = statistics.median(r["elapsed"] for r in runs)
         to = runs[0]["timeout"]
         results[(path, solver)] = {"answer": ans, "elapsed": med, "timeout": to}
@@ -65,6 +136,43 @@ def pair_files(data, solver_a, solver_b):
     files_b = {p: v for (p, s), v in data.items() if s == solver_b}
     common = set(files_a.keys()) & set(files_b.keys())
     return {p: (files_a[p], files_b[p]) for p in common}
+
+
+def collect_answer_disagreements(data, solver_names):
+    """Files where two solvers returned conflicting conclusive answers.
+
+    A sat/unsat split is a soundness bug in one of the solvers, so it is
+    reported separately from any timing difference. Returns a list of
+    (path, {solver: answer}) sorted by file size, smallest first, so the
+    easiest reproducer comes out on top.
+    """
+    by_path = {}
+    for (path, solver), values in data.items():
+        by_path.setdefault(path, {})[solver] = values["answer"]
+
+    disagreements = []
+    for path, answers in by_path.items():
+        conclusive = {a for a in answers.values() if a in CONCLUSIVE_ANSWERS}
+        if len(conclusive) > 1:
+            disagreements.append((path, {s: answers.get(s, "-") for s in solver_names}))
+
+    def sort_key(item):
+        path = item[0]
+        try:
+            return (0, os.path.getsize(path), path)
+        except OSError:
+            return (1, 0, path)
+
+    return sorted(disagreements, key=sort_key)
+
+
+def write_answer_disagreements(path, disagreements, solver_names):
+    """Write the full disagreement list to CSV, one row per file."""
+    with open(path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["path", *solver_names])
+        for input_path, answers in disagreements:
+            writer.writerow([input_path, *(answers[s] for s in solver_names)])
 
 
 class ResultLog:
@@ -104,7 +212,7 @@ def score_table(paired, solver_a, solver_b, virtual_timeout):
         for data, times_list in [(a, a_times), (b, b_times)]:
             ans = data["answer"]
             t = data["elapsed"]
-            if ans in ("sat", "unsat") and t < virtual_timeout:
+            if ans in CONCLUSIVE_ANSWERS and t < virtual_timeout:
                 times_list.append(t)
             else:
                 times_list.append(2 * virtual_timeout)  # PAR-2 penalty
@@ -148,7 +256,7 @@ def score_table(paired, solver_a, solver_b, virtual_timeout):
         direction = "lower" if d_par2 < 0 else "higher"
         par2_pct = f" ({pct:.1f}% {direction})"
 
-    vto_label = f"{virtual_timeout}s" if virtual_timeout < 60 else f"{virtual_timeout/60:.0f}m"
+    vto_label = f"{virtual_timeout:g}s" if virtual_timeout < 60 else f"{virtual_timeout/60:.0f}m"
     print(f"{BOLD}  Competition Score (virtual timeout = {vto_label}){RST}")
     print(f"  {'─' * 74}")
     print(f"  {'':10} {solver_a:>12} {solver_b:>12}   {'Delta':>24}")

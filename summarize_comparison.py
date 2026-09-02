@@ -20,7 +20,29 @@ from collections import Counter
 from benchlib import (
     BOLD, RED, GREEN, YELLOW, CYAN, MAGENTA, RST,
     load_medians, load_combined, pair_files, shorten, extract_logic, score_table,
+    solvers_for_csv,
 )
+
+
+def resolve_pair(parser, csv_path, solver_a, solver_b):
+    """Pick the two solvers to compare, honouring whichever was given.
+
+    Defaults come from the run manifest, so the baseline the config listed
+    first stays the baseline here.
+    """
+    names = solvers_for_csv(csv_path)
+    for name in (solver_a, solver_b):
+        if name is not None and name not in names:
+            parser.error(f"no results for solver {name!r} in {csv_path} "
+                         f"(found: {', '.join(names) or 'none'})")
+    if solver_a is None:
+        solver_a = next((n for n in names if n != solver_b), None)
+    if solver_b is None:
+        solver_b = next((n for n in names if n != solver_a), None)
+    if not solver_a or not solver_b:
+        parser.error(f"{csv_path} holds fewer than two solvers "
+                     f"({', '.join(names) or 'none'}); pass --solver-a/--solver-b")
+    return solver_a, solver_b
 
 
 def summarize_by_theory(paired, solver_a, solver_b):
@@ -199,10 +221,15 @@ def main():
     parser.add_argument("main_csv", help="Main pass CSV")
     parser.add_argument("reval_csv", nargs="?", default=None,
                         help="Revalidation CSV (optional)")
-    parser.add_argument("--solver-a", default="master", help="First solver (default: master)")
-    parser.add_argument("--solver-b", default="incremental", help="Second solver (default: incremental)")
+    parser.add_argument("--solver-a", default=None,
+                        help="Baseline solver (default: first one in the CSV)")
+    parser.add_argument("--solver-b", default=None,
+                        help="Solver to score against it (default: second one in the CSV)")
     parser.add_argument("--by-theory", action="store_true", help="Show per-solver summary grouped by theory")
     args = parser.parse_args()
+
+    args.solver_a, args.solver_b = resolve_pair(
+        parser, args.main_csv, args.solver_a, args.solver_b)
 
     main_data = load_medians(args.main_csv)
 

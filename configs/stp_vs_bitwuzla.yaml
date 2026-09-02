@@ -1,0 +1,84 @@
+# STP (master) vs Bitwuzla (main) on the UF benchmarks, across the STP
+# option sets that matter for uninterpreted functions.
+#
+#   ./run_comparison.py configs/stp_vs_bitwuzla.yaml
+
+name: STP vs Bitwuzla (UF benchmarks)
+output_prefix: stp_vs_bitwuzla
+
+benchmarks:
+  dirs:
+    - /mnt/baranem/uf_bench
+
+run:
+  timeout: 30.0
+  runs: 3
+  wall_hours: 24.0
+
+binaries:
+  stp: /home/avj/clones/stp/master/build-release/stp
+  bitwuzla: /home/avj/clones/bitwuzla/main/build/src/main/bitwuzla
+
+arg_groups:
+  # --bv-eq-abstraction and --bv-term-abstraction are CLI11 BOOLEAN options,
+  # so they must be written =1. Bare, they swallow the following token as
+  # their value and STP exits 255 before solving -- which this harness records
+  # as `error`, i.e. a loss on every file, rather than as the argument mistake
+  # it is.
+  common:
+    - --uninterpreted-functions
+    - --array-equality
+    # Pinned rather than left to the default: it is on by default today, and
+    # this run should not change meaning if that flips.
+    - --uf-narrow-results=1
+  auto:
+    - --uf-ackermann=auto
+  cegar:
+    - --uf-ackermann=off
+    - --bv-eq-abstraction=1
+    - --bv-term-abstraction=1
+  # --bv-abstraction-width defaults to 64, and nothing in a QF_UF query is
+  # that wide: a sort declared by declare-sort gets a 16-bit carrier
+  # (--uf-sort-width), narrowed further by --uf-narrow-results. So on the
+  # QF_UF part of this corpus the two abstractions above never fire, and
+  # `cegar` is an --uf-ackermann=off run under another name -- measured on
+  # QG-classification/qg5/gensys_icl003.smt2, both spend 4.7s over an
+  # identical 65 SAT calls and 64 counterexamples. At width 16 they do fire on
+  # the carrier. (They already fire unmodified on the wide QF_UFBV files: the
+  # 256-bit Certora queries go from 25.2s to 15.2s.)
+  width16:
+    - --bv-abstraction-width=16
+
+# The first entry is the baseline every other one is scored against in the
+# final tables. The live display shows all of them side by side, so extra
+# entries cost nothing but run time.
+solvers:
+  - name: bitwuzla
+    binary: bitwuzla
+
+  - name: stp-auto
+    binary: stp
+    arg_groups: [common, auto]
+
+  - name: stp-inject
+    binary: stp
+    arg_groups: [common, auto]
+    args: [--uf-inject-args=1]
+
+  - name: stp-phase
+    binary: stp
+    arg_groups: [common, auto]
+    args: [--uf-phase-hints=1]
+
+  - name: stp-cegar
+    binary: stp
+    arg_groups: [common, cegar]
+
+  - name: stp-cegar-inject
+    binary: stp
+    arg_groups: [common, cegar]
+    args: [--uf-inject-args=1]
+
+  - name: stp-cegar-w16
+    binary: stp
+    arg_groups: [common, cegar, width16]

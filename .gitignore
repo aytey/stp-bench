@@ -1,0 +1,14 @@
+# Run artifacts. Results go to whatever directory the run is launched from,
+# so keep them out of the repo rather than out of one named output directory.
+*.csv
+*_manifest.json
+
+# Plot output.
+plots_out/
+stp_comparison.html
+
+__pycache__/
+*.py[cod]
+
+# Crash debris from a solver under test.
+core

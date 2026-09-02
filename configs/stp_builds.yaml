@@ -1,0 +1,40 @@
+# Two STP builds against each other on the incremental benchmarks.
+#
+#   ./run_comparison.py configs/stp_builds.yaml
+#
+# Point `binaries` at the two worktrees to compare; the git hash of each is
+# read from its build directory and used to name the output CSV.
+
+name: STP Build Comparison
+output_prefix: build_comparison
+
+benchmarks:
+  dirs:
+    - /mnt/baranem/smt2_problems/incremental
+
+run:
+  timeout: 30.0
+  runs: 3
+  wall_hours: 24.0
+  # The corpus is incremental, but each file is still handed to the solver as
+  # an argument by default. Set this to true (or pass --incremental) to feed
+  # it over stdin command-by-command, the way the SMT-COMP trace executor
+  # does.
+  incremental: false
+
+binaries:
+  master: /home/avj/clones/stp/master/build/stp
+  fix_444_adder: /home/avj/clones/stp/fix_444_adder_sharing/build/stp
+
+arg_groups:
+  common:
+    - --array-equality
+
+solvers:
+  - name: master
+    binary: master
+    arg_groups: [common]
+
+  - name: fix_444_adder
+    binary: fix_444_adder
+    arg_groups: [common]

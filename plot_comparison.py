@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Generate cactus plots (Fig. 4 style) and scatter plots (Fig. 5 style)
-comparing master vs incremental STP builds.
+comparing two solvers from a comparison run.
 
 Produces plots at two virtual timeouts (24s and 2m), matching the score
 tables from summarize_comparison.py:
@@ -21,7 +21,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
-from benchlib import load_combined, extract_logic
+from benchlib import load_combined, extract_logic, solvers_for_csv
 
 
 # ── Colours & markers per logic (matching Fig. 5 style) ──────────────────
@@ -61,16 +61,36 @@ def vto_slug(vto):
 
 # ── Data preparation ─────────────────────────────────────────────────────
 
-def prepare_data(main_csv, reval_csv):
+def resolve_pair(parser, csv_path, solver_a, solver_b):
+    """Pick the two solvers to compare, honouring whichever was given.
+
+    Defaults come from the run manifest, so the baseline the config listed
+    first stays the baseline here.
+    """
+    names = solvers_for_csv(csv_path)
+    for name in (solver_a, solver_b):
+        if name is not None and name not in names:
+            parser.error(f"no results for solver {name!r} in {csv_path} "
+                         f"(found: {', '.join(names) or 'none'})")
+    if solver_a is None:
+        solver_a = next((n for n in names if n != solver_b), None)
+    if solver_b is None:
+        solver_b = next((n for n in names if n != solver_a), None)
+    if not solver_a or not solver_b:
+        parser.error(f"{csv_path} holds fewer than two solvers "
+                     f"({', '.join(names) or 'none'}); pass --solver-a/--solver-b")
+    return solver_a, solver_b
+
+def prepare_data(main_csv, reval_csv, solver_a, solver_b):
     """Load CSVs and group by logic.
 
     Returns by_logic: logic -> list of
-    (master_time, incr_time, master_answer, incr_answer).
+    (solver_a_time, solver_b_time, solver_a_answer, solver_b_answer).
     """
     data = load_combined(main_csv, reval_csv)
 
-    files_m = {p: v for (p, s), v in data.items() if s == "master"}
-    files_i = {p: v for (p, s), v in data.items() if s == "incremental"}
+    files_m = {p: v for (p, s), v in data.items() if s == solver_a}
+    files_i = {p: v for (p, s), v in data.items() if s == solver_b}
     common = sorted(set(files_m) & set(files_i))
 
     by_logic = {}
@@ -91,16 +111,17 @@ def is_solved(elapsed, answer, vto):
 
 # ── Figure 4: cactus plot ────────────────────────────────────────────────
 
-def cactus_plot(points_master, points_incr, vto, title, out_path):
+def cactus_plot(points_a, points_b, labels, vto, title, out_path):
     """Draw a cactus (cumulative solved) plot.
 
-    points_master / points_incr: list of (elapsed, answer) tuples.
+    points_a / points_b: list of (elapsed, answer) tuples.
+    labels: (solver_a_name, solver_b_name).
     """
     fig, ax = plt.subplots(figsize=(6, 4.5))
 
     for label, points, color, ls in [
-        ("master",      points_master, "#d62728", "-"),
-        ("incremental", points_incr,   "#1f77b4", "--"),
+        (labels[0], points_a, "#d62728", "-"),
+        (labels[1], points_b, "#1f77b4", "--"),
     ]:
         solved_times = sorted(
             t for t, a in points if is_solved(t, a, vto)
@@ -124,10 +145,11 @@ def cactus_plot(points_master, points_incr, vto, title, out_path):
 
 # ── Figure 5: scatter plot with timeout border ───────────────────────────
 
-def scatter_plot(by_logic_points, vto, title, out_path):
+def scatter_plot(by_logic_points, labels, vto, title, out_path):
     """Draw a log-log scatter plot with gray timeout border.
 
-    by_logic_points: dict  logic -> list of (master_t, incr_t, m_ans, i_ans).
+    by_logic_points: dict  logic -> list of (a_t, b_t, a_ans, b_ans).
+    labels: (solver_a_name, solver_b_name), used for the axis labels.
     Instances that are unsolved under the virtual timeout are placed
     firmly inside the gray margin at 1.3x the timeout.
     """
@@ -186,8 +208,8 @@ def scatter_plot(by_logic_points, vto, title, out_path):
     ax.set_yscale("log")
     ax.set_xlim(lo, hi)
     ax.set_ylim(lo, hi)
-    ax.set_xlabel("Solve time of master [s]")
-    ax.set_ylabel("Solve time of incremental [s]")
+    ax.set_xlabel(f"Solve time of {labels[0]} [s]")
+    ax.set_ylabel(f"Solve time of {labels[1]} [s]")
     ax.set_title(title, fontsize=11)
     ax.set_aspect("equal")
     ax.legend(loc="upper left", fontsize=7, markerscale=1.5,
@@ -201,7 +223,7 @@ def scatter_plot(by_logic_points, vto, title, out_path):
 
 # ── HTML report ──────────────────────────────────────────────────────────
 
-def write_html(outdir, logics, ext, main_csv, reval_csv, virtual_timeouts):
+def write_html(outdir, logics, ext, main_csv, reval_csv, virtual_timeouts, labels):
     """Write stp_comparison.html referencing all generated plots."""
     if ext == "pdf":
         img_tag = '<embed src="{src}" type="application/pdf" width="100%" height="600px">'
@@ -254,7 +276,7 @@ def write_html(outdir, logics, ext, main_csv, reval_csv, virtual_timeouts):
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>STP Build Comparison</title>
+<title>{html.escape(labels[0])} vs {html.escape(labels[1])}</title>
 <style>
   body {{ font-family: sans-serif; margin: 2em; background: #fafafa; }}
   h1 {{ color: #333; }}
@@ -269,7 +291,7 @@ def write_html(outdir, logics, ext, main_csv, reval_csv, virtual_timeouts):
 </style>
 </head>
 <body>
-<h1>STP Build Comparison</h1>
+<h1>{html.escape(labels[0])} vs {html.escape(labels[1])}</h1>
 <p class="meta">
   Main CSV: <code>{html.escape(os.path.basename(main_csv))}</code><br>
   Revalidation CSV: <code>{html.escape(os.path.basename(reval_csv))}</code><br>
@@ -297,13 +319,22 @@ def main():
     parser.add_argument("main_csv")
     parser.add_argument("reval_csv")
     parser.add_argument("--outdir", default=".")
+    parser.add_argument("--solver-a", default=None,
+                        help="Baseline solver (default: first one in the CSV)")
+    parser.add_argument("--solver-b", default=None,
+                        help="Solver to plot against it (default: second one in the CSV)")
     parser.add_argument("--format", default="svg", choices=["pdf", "svg", "png"],
                         help="Output image format (default: svg)")
     args = parser.parse_args()
     os.makedirs(args.outdir, exist_ok=True)
     ext = args.format
 
-    by_logic = prepare_data(args.main_csv, args.reval_csv)
+    solver_a, solver_b = resolve_pair(parser, args.main_csv,
+                                      args.solver_a, args.solver_b)
+    labels = (solver_a, solver_b)
+    print(f"Comparing: {solver_a} vs {solver_b}")
+
+    by_logic = prepare_data(args.main_csv, args.reval_csv, solver_a, solver_b)
     logics = sorted(by_logic)
     print(f"Logics: {', '.join(logics)}")
 
@@ -314,37 +345,38 @@ def main():
         print(f"\n── Virtual timeout: {label} ──")
 
         # Cactus plots
-        all_master = [(mt, ma) for pts in by_logic.values() for mt, _, ma, _ in pts]
-        all_incr   = [(it, ia) for pts in by_logic.values() for _, it, _, ia in pts]
-        cactus_plot(all_master, all_incr, vto,
-                    f"All theories ({label}) — master vs incremental",
+        pair = f"{solver_a} vs {solver_b}"
+        all_a = [(at, aa) for pts in by_logic.values() for at, _, aa, _ in pts]
+        all_b = [(bt, ba) for pts in by_logic.values() for _, bt, _, ba in pts]
+        cactus_plot(all_a, all_b, labels, vto,
+                    f"All theories ({label}) — {pair}",
                     os.path.join(args.outdir, f"cactus_all_{slug}.{ext}"))
         total += 1
 
         for logic in logics:
             pts = by_logic[logic]
-            master_pts = [(mt, ma) for mt, _, ma, _ in pts]
-            incr_pts   = [(it, ia) for _, it, _, ia in pts]
-            cactus_plot(master_pts, incr_pts, vto,
-                        f"{logic} ({label}) — master vs incremental",
+            a_pts = [(at, aa) for at, _, aa, _ in pts]
+            b_pts = [(bt, ba) for _, bt, _, ba in pts]
+            cactus_plot(a_pts, b_pts, labels, vto,
+                        f"{logic} ({label}) — {pair}",
                         os.path.join(args.outdir, f"cactus_{logic}_{slug}.{ext}"))
             total += 1
 
         # Scatter plots
-        scatter_plot(by_logic, vto,
-                     f"All theories ({label}) — master vs incremental",
+        scatter_plot(by_logic, labels, vto,
+                     f"All theories ({label}) — {pair}",
                      os.path.join(args.outdir, f"scatter_all_{slug}.{ext}"))
         total += 1
 
         for logic in logics:
-            scatter_plot({logic: by_logic[logic]}, vto,
-                         f"{logic} ({label}) — master vs incremental",
+            scatter_plot({logic: by_logic[logic]}, labels, vto,
+                         f"{logic} ({label}) — {pair}",
                          os.path.join(args.outdir, f"scatter_{logic}_{slug}.{ext}"))
             total += 1
 
     # HTML report
     write_html(args.outdir, logics, ext, args.main_csv, args.reval_csv,
-               VIRTUAL_TIMEOUTS)
+               VIRTUAL_TIMEOUTS, labels)
 
     print(f"\nDone — {total} plots + HTML report.")
 

@@ -10,15 +10,25 @@ import argparse
 import statistics
 from collections import Counter
 
-from benchlib import load_medians, shorten
+from benchlib import load_medians, shorten, solvers_for_csv
 
 
 def main():
     parser = argparse.ArgumentParser(description="Compare two CSV runs for a solver")
     parser.add_argument("old", help="Old CSV file")
     parser.add_argument("new", help="New CSV file")
-    parser.add_argument("--solver", default="incremental", help="Solver name to compare (default: incremental)")
+    parser.add_argument("--solver", default=None,
+                        help="Solver name to compare (default: the run's baseline)")
     args = parser.parse_args()
+
+    # Solver names come from the experiment config, so take them from the CSV
+    # rather than assuming any particular one.
+    if args.solver is None:
+        names = solvers_for_csv(args.new)
+        if not names:
+            parser.error(f"no results in {args.new}")
+        args.solver = names[0]
+        print(f"Solver: {args.solver}")
 
     # Load and filter to the requested solver
     old_all = load_medians(args.old)
