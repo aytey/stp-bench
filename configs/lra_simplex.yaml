@@ -1,0 +1,70 @@
+# The two simplex implementations on stp-lra's new_simplex branch, against
+# each other: one binary, one option.
+#
+#   ./run_comparison.py configs/lra_simplex.yaml
+#
+# --lra-float-driver decides which one drives the partial theory checks the
+# SAT search asks for. Off (the branch default) they are answered by the
+# exact-rational simplex directly. On, a double-precision simplex answers
+# them and every conflict and model it produces is re-derived exactly, so the
+# answers are meant to be identical and only the time should move. A sat/unsat
+# split between the two columns is therefore a bug, not a result -- the runner
+# reports those separately, in <output>_answer_disagreements.csv.
+
+name: LRA simplex implementations (new_simplex)
+output_prefix: lra_simplex
+
+benchmarks:
+  dirs:
+    # Non-incremental only, deliberately. STP's incremental driver hands every
+    # Real query to the batch coordinator, so the 3,068 files under
+    # lra_bench/incremental would measure the batch path over again rather
+    # than anything incremental. This is 3,037 files: QF_LRA 1,753 and
+    # QF_UFLRA 1,284.
+    - /mnt/baranem/lra_bench/non-incremental
+
+run:
+  # The budget BENCHMARK_STATUS.md measures this branch at, so the numbers
+  # here can be read beside the ones there. Everything else -- repeats,
+  # revalidation policy -- comes from configs/defaults.yaml.
+  timeout: 20.0
+
+report:
+  # A 24s cutoff would be inert against a 20s timeout, so score at half the
+  # budget and at all of it.
+  virtual_timeouts: [10, 20]
+
+binaries:
+  # Not built yet at the time of writing:
+  #   cd /home/avj/clones/stp-lra/new_simplex
+  #   ./configure.sh release --name=build-release && make -C build-release -j
+  # A machine that builds it elsewhere pins its own path in configs/local.yaml
+  # rather than editing this file.
+  stp: /home/avj/clones/stp-lra/new_simplex/build-release/stp
+
+arg_groups:
+  common:
+    # SMT-LIB2 is already what the parser falls back to with no format flag,
+    # but this run should not change meaning if that default moves.
+    - --SMTLIB2
+    # The float driver is documented as taking effect "under
+    # --lra-theory-propagation", so it is pinned on for both columns rather
+    # than left to a default. It is on by default today; if that flips, the
+    # comparison would silently become a no-op with both columns identical.
+    - --lra-theory-propagation=1
+
+# These are CLI11 *options*, not flags -- tools/stp/main.cpp registers them
+# with add_option -- so they must be written =0 / =1. Bare, they would take
+# the .smt2 path as their value and STP would exit before solving, which the
+# harness records as `error` on every file rather than as the argument
+# mistake it is.
+solvers:
+  - name: exact-simplex
+    binary: stp
+    arg_groups: [common]
+    args: [--lra-float-driver=0]
+
+  - name: float-simplex
+    binary: stp
+    arg_groups: [common]
+    args: [--lra-float-driver=1]
