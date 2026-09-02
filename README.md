@@ -10,15 +10,18 @@ Which binaries run, with which arguments, over which benchmarks, lives in the
 YAML config — not in the code. Adding an option set to try is an edit to
 `configs/`.
 
-Settings come from three layers, each overriding the one before:
+Settings come from four layers, each overriding the one before:
 
 1. `configs/defaults.yaml` — timeout, repeats, revalidation policy, shipped
    with the repo and shared by every experiment.
 2. the named experiment file — what this comparison actually changes.
-3. command-line flags — a one-off run.
+3. `configs/local.yaml` — this machine's binary paths. Gitignored; copy
+   `configs/local.example.yaml` to create one.
+4. command-line flags — a one-off run.
 
-So raising the timeout everywhere is one edit to `defaults.yaml`, and an
-experiment file carries only its own solvers, benchmarks and exceptions.
+So raising the timeout everywhere is one edit to `defaults.yaml`, an
+experiment file carries only its own solvers, benchmarks and exceptions, and a
+host whose builds live somewhere else pins them without touching either.
 
 ## What a run produces
 
@@ -121,9 +124,26 @@ own in full.
 thing, so setting one in an experiment clears an inherited other rather than
 leaving both in play.
 
-A missing `defaults.yaml` is not an error: the built-in defaults match what it
-ships with. `--no-defaults` skips it, and `--defaults PATH` uses a different
-one.
+A missing file at any layer is not an error: the built-in defaults match what
+`defaults.yaml` ships with, and most hosts need no `local.yaml` at all.
+`--no-defaults` / `--defaults PATH` and `--no-override` / `--override PATH`
+control the bottom and top layers.
+
+### Host-local paths
+
+Experiment configs name absolute binary paths, and those differ between
+machines. Rather than fork the config, give each host a `configs/local.yaml`:
+
+```yaml
+binaries:
+  stp: /home/avj/clones/stp/uf_updated/build/stp
+  bitwuzla: /home/avj/clones/bitwuzla/build/src/main/bitwuzla
+```
+
+It is applied last, so it wins, and `binaries` merges key-by-key — naming one
+binary leaves the rest of the experiment alone. Anything else in the schema
+works there too (`run.workers` on a shared machine, a smaller corpus). The
+banner and the manifest both record which layers were in play.
 
 The first solver is the baseline. Every other one is scored against it, both
 in the live display and in the final tables, so a run can carry as many option

@@ -1,3 +1,7 @@
+# Host-local config: this machine's binary paths, layered over the experiment.
+# configs/local.example.yaml is the template and is tracked.
+configs/local.yaml
+
 # Run artifacts. Results go to whatever directory the run is launched from,
 # so keep them out of the repo rather than out of one named output directory.
 *.csv

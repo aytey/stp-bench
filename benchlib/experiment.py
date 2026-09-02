@@ -63,6 +63,8 @@ def build_manifest(config, solver_list, git_hashes):
         "source": str(config.source.resolve()),
         "defaults": (str(Path(config.defaults_source).resolve())
                      if config.defaults_source else None),
+        "override": (str(Path(config.override_source).resolve())
+                     if config.override_source else None),
         "started": datetime.datetime.now().astimezone().isoformat(timespec="seconds"),
         "timeout": config.timeout,
         "runs": config.runs,
@@ -219,9 +221,12 @@ def run_experiment(config, output=None, force=False):
     """Run the whole comparison described by `config`. Returns the exit code."""
     solver_list = []
     git_hashes = {}
-    print(f"{BOLD}{config.name}{RST}  (from {config.source}"
-          + (f" over {config.defaults_source}" if config.defaults_source else "")
-          + ")")
+    layers = [str(config.source)]
+    if config.defaults_source:
+        layers.insert(0, str(config.defaults_source))
+    if config.override_source:
+        layers.append(str(config.override_source))
+    print(f"{BOLD}{config.name}{RST}  (config: {' -> '.join(layers)})")
     for solver in config.solvers:
         p = str(solver.binary.resolve())
         if not os.path.isfile(p):

@@ -1,0 +1,23 @@
+# Host-local settings. Copy to configs/local.yaml — which is gitignored, so it
+# stays on this machine — and pin whatever differs here.
+#
+# This layer is applied LAST, on top of the experiment file, so it wins. It
+# exists because binary paths are host-specific while the experiment
+# describing a comparison is not: the same configs/stp_vs_bitwuzla.yaml runs
+# on machines whose builds live in different places, each naming its own paths
+# here rather than editing the shared file and having to remember not to
+# commit it.
+#
+# `binaries` merges key-by-key, so naming one binary leaves the others alone.
+
+binaries:
+  stp: /home/avj/clones/stp/uf_updated/build/stp
+  bitwuzla: /home/avj/clones/bitwuzla/build/src/main/bitwuzla
+
+# Anything else in the schema works here too — a smaller corpus or a shorter
+# timeout on a machine you share, for instance:
+#
+# run:
+#   workers: 8
+# benchmarks:
+#   dirs: [/mnt/baranem/uf_bench/non-incremental/QF_UFBV]

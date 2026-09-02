@@ -8,8 +8,15 @@ code.
 Settings are layered. `configs/defaults.yaml` ships with the repo and holds
 the house defaults -- timeout, repeats, revalidation policy -- so an
 experiment file carries only what it actually changes, and raising the
-default timeout is one edit rather than one per experiment. An experiment
-file overrides those; command-line flags override both.
+default timeout is one edit rather than one per experiment. The experiment
+file overrides those, an untracked `configs/local.yaml` overrides the
+experiment, and command-line flags override everything.
+
+`local.yaml` exists because binary paths are host-specific while the
+experiment describing a comparison is not: the same config runs on machines
+whose builds live in different places, each pinning its own paths in one
+untracked file rather than editing -- and having to avoid committing -- the
+shared one.
 
 The first solver listed is the baseline; every other one is scored against
 it in the final tables.
@@ -21,8 +28,11 @@ from pathlib import Path
 
 import yaml
 
-# Shipped alongside the code, so it is found from any working directory.
-DEFAULTS_PATH = Path(__file__).resolve().parent.parent / "configs" / "defaults.yaml"
+# Shipped alongside the code, so both are found from any working directory.
+_CONFIG_DIR = Path(__file__).resolve().parent.parent / "configs"
+DEFAULTS_PATH = _CONFIG_DIR / "defaults.yaml"
+# Host-local, untracked, and applied last: this machine's binary paths.
+LOCAL_PATH = _CONFIG_DIR / "local.yaml"
 
 # Sections merged key-by-key across layers. Everything else replaces wholesale:
 # `solvers` is a list, and merging two lists of solvers is guesswork.
@@ -62,6 +72,7 @@ class Solver:
 class ExperimentConfig:
     source: Path
     defaults_source: Path | None
+    override_source: Path | None
     name: str
     output_prefix: str
     solvers: list[Solver]
@@ -217,11 +228,13 @@ def merge_layers(base, override):
     return merged
 
 
-def load_config(path, defaults=DEFAULTS_PATH) -> ExperimentConfig:
-    """Read and validate an experiment YAML file, layered over the defaults.
+def load_config(path, defaults=DEFAULTS_PATH, override=LOCAL_PATH) -> ExperimentConfig:
+    """Read and validate an experiment YAML file, layered between the others.
 
-    `defaults` may be None to use the built-in defaults alone. A missing
-    defaults file is not an error: the code defaults match what it ships with.
+    Order is `defaults`, then the experiment file, then `override`. Either may
+    be None to skip that layer, and a missing file is not an error -- the code
+    defaults match what defaults.yaml ships with, and most hosts need no
+    override at all.
     """
     path = Path(path)
     doc = _read_yaml(path)
@@ -231,6 +244,12 @@ def load_config(path, defaults=DEFAULTS_PATH) -> ExperimentConfig:
         doc = merge_layers(defaults_doc, doc)
     else:
         defaults = None
+
+    override_doc = _read_yaml(override, required=False) if override else None
+    if override_doc is not None:
+        doc = merge_layers(doc, override_doc)
+    else:
+        override = None
 
     solvers = _parse_solvers(doc)
 
@@ -252,6 +271,7 @@ def load_config(path, defaults=DEFAULTS_PATH) -> ExperimentConfig:
     config = ExperimentConfig(
         source=path,
         defaults_source=Path(defaults) if defaults else None,
+        override_source=Path(override) if override else None,
         name=str(doc.get("name") or path.stem),
         output_prefix=str(doc.get("output_prefix") or path.stem),
         solvers=solvers,
