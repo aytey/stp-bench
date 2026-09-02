@@ -12,15 +12,10 @@ benchmarks:
   dirs:
     - /mnt/baranem/smt2_problems/incremental
 
-run:
-  timeout: 30.0
-  runs: 3
-  wall_hours: 24.0
-  # The corpus is incremental, but each file is still handed to the solver as
-  # an argument by default. Set this to true (or pass --incremental) to feed
-  # it over stdin command-by-command, the way the SMT-COMP trace executor
-  # does.
-  incremental: false
+# Timeout, repeats and revalidation policy come from configs/defaults.yaml.
+# The corpus here is incremental, but each file is still handed to the solver
+# as an argument; set `incremental: true` under `run:` (or pass --incremental)
+# to feed it over stdin command-by-command, trace-executor style.
 
 binaries:
   master: /home/avj/clones/stp/master/build/stp

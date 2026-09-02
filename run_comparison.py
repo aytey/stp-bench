@@ -4,8 +4,8 @@ Run a solver comparison described by a YAML config.
 
 Which binaries run, with which arguments, over which benchmarks, is entirely
 in the config file — see configs/ for the ones in use and README.md for the
-schema. Command-line flags override the config's `run:` section for a one-off
-run.
+schema. Settings layer: configs/defaults.yaml, then the named experiment
+file, then any command-line flag.
 
 Output: a CSV with one row per (file, solver, run) triple, plus a revalidation
 CSV for the files whose first-pass results disagreed.
@@ -19,7 +19,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from benchlib.config import ConfigError, load_config
+from benchlib.config import DEFAULTS_PATH, ConfigError, load_config
 from benchlib.experiment import run_experiment
 
 
@@ -27,6 +27,10 @@ def main():
     parser = argparse.ArgumentParser(
         description="Run a solver comparison from a YAML config")
     parser.add_argument("config", type=Path, help="Experiment YAML (see configs/)")
+    parser.add_argument("--defaults", type=Path, default=DEFAULTS_PATH,
+                        help=f"Config layered under it (default: {DEFAULTS_PATH})")
+    parser.add_argument("--no-defaults", action="store_true",
+                        help="Ignore the defaults file; use the built-in defaults")
     parser.add_argument("--dir", type=Path, nargs="*", default=None,
                         help="Override benchmarks.dirs")
     parser.add_argument("--file-list", type=Path, default=None,
@@ -54,7 +58,8 @@ def main():
     args = parser.parse_args()
 
     try:
-        config = load_config(args.config)
+        config = load_config(args.config,
+                             defaults=None if args.no_defaults else args.defaults)
 
         if args.solvers:
             wanted = [n.strip() for n in args.solvers.split(",") if n.strip()]

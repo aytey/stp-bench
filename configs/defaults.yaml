@@ -1,0 +1,27 @@
+# House defaults for every experiment in this directory.
+#
+# Each config in configs/ is layered on top of this file, so it carries only
+# what it actually changes. Raising the timeout for all experiments is one
+# edit here rather than one per file.
+#
+# Mappings merge key-by-key: an experiment setting `run.timeout` keeps the
+# `run.runs` below. `solvers` is not merged — an experiment always names its
+# own, in full. Command-line flags override both layers, and --no-defaults
+# ignores this file entirely.
+#
+# This file is not runnable on its own: it names no solvers.
+
+run:
+  timeout: 30.0       # seconds per solver per file
+  runs: 3             # repeats, medianed
+  workers: null       # null -> CPU count
+  wall_hours: 24.0    # budget for the main pass
+  incremental: false  # true -> feed stdin command-by-command, trace-executor style
+
+revalidation:
+  enabled: true
+  ratio: 3.0          # median gap between base and an alternative that flags a file
+  timeout: null       # the repeat timeout; null -> max(4 * run.timeout, 120)
+
+report:
+  virtual_timeouts: [24, 120]   # score table cutoffs, in seconds

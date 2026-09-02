@@ -10,6 +10,16 @@ Which binaries run, with which arguments, over which benchmarks, lives in the
 YAML config — not in the code. Adding an option set to try is an edit to
 `configs/`.
 
+Settings come from three layers, each overriding the one before:
+
+1. `configs/defaults.yaml` — timeout, repeats, revalidation policy, shipped
+   with the repo and shared by every experiment.
+2. the named experiment file — what this comparison actually changes.
+3. command-line flags — a one-off run.
+
+So raising the timeout everywhere is one edit to `defaults.yaml`, and an
+experiment file carries only its own solvers, benchmarks and exceptions.
+
 ## What a run produces
 
 For output `<prefix>_<hashes>.csv`:
@@ -46,6 +56,11 @@ so it takes a single `--solver`, defaulting to the baseline.
 
 ## Config schema
 
+Every key below may appear in either layer. `configs/defaults.yaml` holds the
+`run`, `revalidation` and `report` blocks; an experiment file typically sets
+only `name`, `output_prefix`, `benchmarks`, `binaries`, `arg_groups` and
+`solvers`.
+
 ```yaml
 name: STP vs Bitwuzla (UF benchmarks)   # shown in the live display
 output_prefix: stp_vs_bitwuzla          # <prefix>_<git hashes>.csv
@@ -56,7 +71,7 @@ benchmarks:
 
 run:
   timeout: 30.0                         # seconds per solver per file
-  runs: 3                               # medianed
+  runs: 3                               # repeats, medianed
   workers: null                         # null -> CPU count
   wall_hours: 24.0                      # budget for the main pass
   incremental: false                    # true -> feed stdin command-by-command,
@@ -65,7 +80,8 @@ run:
 revalidation:
   enabled: true
   ratio: 3.0                            # median gap that flags a file
-  timeout: null                         # null -> max(4 * timeout, 120)
+  timeout: null                         # the repeat timeout;
+                                        #   null -> max(4 * run.timeout, 120)
 
 report:
   virtual_timeouts: [24, 120]           # score table cutoffs, in seconds
@@ -88,9 +104,26 @@ solvers:                                # first entry is the baseline
 ```
 
 Only `solvers` and one of `benchmarks.dirs` / `benchmarks.file_list` are
-required; every other key has the default shown. Unknown keys are rejected
-rather than ignored, so a typo fails immediately instead of silently changing
-what a 24-hour run measures.
+required across the two layers; every other key has the default shown.
+Unknown keys are rejected rather than ignored, in both layers, so a typo
+fails immediately instead of silently changing what a 24-hour run measures.
+
+### How the layers merge
+
+`benchmarks`, `run`, `revalidation`, `report`, `binaries` and `arg_groups`
+merge key-by-key, so an experiment setting `run.timeout` keeps the inherited
+`run.runs`, and an `arg_groups` defined in `defaults.yaml` is usable from any
+experiment. Everything else replaces wholesale — in particular `solvers`,
+where merging two lists would be guesswork, so an experiment always names its
+own in full.
+
+`benchmarks.dirs` and `benchmarks.file_list` are two ways of saying the same
+thing, so setting one in an experiment clears an inherited other rather than
+leaving both in play.
+
+A missing `defaults.yaml` is not an error: the built-in defaults match what it
+ships with. `--no-defaults` skips it, and `--defaults PATH` uses a different
+one.
 
 The first solver is the baseline. Every other one is scored against it, both
 in the live display and in the final tables, so a run can carry as many option
@@ -99,7 +132,7 @@ sets as there is time for.
 ## Command-line overrides
 
 `--timeout`, `--runs`, `--workers`, `--wall-hours`, `--incremental`,
-`--dir`, `--file-list` and `--output` override the config for one run.
+`--dir`, `--file-list` and `--output` override both config layers for one run.
 `--no-revalidate` skips the second pass, and `--solvers a,b,c` runs a named
 subset — the first one listed becomes the baseline.
 
@@ -114,6 +147,7 @@ used. That is refused rather than overwritten; pass `--output` or `--force`.
 ## Layout
 
 - `run_comparison.py` — the runner
-- `configs/` — experiment definitions
+- `configs/defaults.yaml` — settings shared by every experiment
+- `configs/` — experiment definitions, layered over those
 - `benchlib/` — config loading, solver execution, result handling, live display
 - `deprecated/` — superseded scripts, kept for reference

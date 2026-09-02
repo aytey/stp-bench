@@ -5,6 +5,12 @@ arguments each is given, which benchmarks to run them over, and the run
 budget. Adding a solver configuration is an edit to that file, never to the
 code.
 
+Settings are layered. `configs/defaults.yaml` ships with the repo and holds
+the house defaults -- timeout, repeats, revalidation policy -- so an
+experiment file carries only what it actually changes, and raising the
+default timeout is one edit rather than one per experiment. An experiment
+file overrides those; command-line flags override both.
+
 The first solver listed is the baseline; every other one is scored against
 it in the final tables.
 """
@@ -14,6 +20,19 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import yaml
+
+# Shipped alongside the code, so it is found from any working directory.
+DEFAULTS_PATH = Path(__file__).resolve().parent.parent / "configs" / "defaults.yaml"
+
+# Sections merged key-by-key across layers. Everything else replaces wholesale:
+# `solvers` is a list, and merging two lists of solvers is guesswork.
+MERGED_SECTIONS = ("benchmarks", "run", "revalidation", "report",
+                   "binaries", "arg_groups")
+
+# Two ways of saying which files to run, so setting one has to clear the
+# other. Otherwise an experiment naming a file_list would silently inherit
+# `dirs` from the defaults and quietly run the wrong corpus.
+EXCLUSIVE_KEYS = {"benchmarks": ("dirs", "file_list")}
 
 TOP_LEVEL_KEYS = {"name", "output_prefix", "benchmarks", "run", "revalidation",
                   "report", "binaries", "arg_groups", "solvers"}
@@ -42,6 +61,7 @@ class Solver:
 @dataclass
 class ExperimentConfig:
     source: Path
+    defaults_source: Path | None
     name: str
     output_prefix: str
     solvers: list[Solver]
@@ -153,22 +173,64 @@ def _parse_solvers(doc):
     return solvers
 
 
-def load_config(path) -> ExperimentConfig:
-    """Read and validate an experiment YAML file."""
-    path = Path(path)
+def _read_yaml(path, required=True):
+    """Parse one YAML file into a mapping, or None if it is absent."""
     try:
         with open(path) as f:
             doc = yaml.safe_load(f)
     except FileNotFoundError:
-        raise ConfigError(f"no such config file: {path}") from None
+        if required:
+            raise ConfigError(f"no such config file: {path}") from None
+        return None
     except yaml.YAMLError as exc:
         raise ConfigError(f"{path}: {exc}") from None
 
     if doc is None:
-        raise ConfigError(f"{path}: file is empty")
+        if required:
+            raise ConfigError(f"{path}: file is empty")
+        return None
     if not isinstance(doc, dict):
         raise ConfigError(f"{path}: top level must be a mapping")
     _check_keys(str(path), doc, TOP_LEVEL_KEYS)
+    return doc
+
+
+def merge_layers(base, override):
+    """Overlay one config document on another.
+
+    Mappings in MERGED_SECTIONS merge key-by-key, so an experiment that sets
+    `run.timeout` keeps the inherited `run.runs`. Everything else replaces.
+    """
+    merged = dict(base)
+    for key, value in override.items():
+        if key in MERGED_SECTIONS and isinstance(value, dict):
+            inherited = dict(merged.get(key) or {})
+            for group in EXCLUSIVE_KEYS.get(key, ()):
+                if group in value:
+                    for other in EXCLUSIVE_KEYS[key]:
+                        inherited.pop(other, None)
+                    break
+            inherited.update(value)
+            merged[key] = inherited
+        else:
+            merged[key] = value
+    return merged
+
+
+def load_config(path, defaults=DEFAULTS_PATH) -> ExperimentConfig:
+    """Read and validate an experiment YAML file, layered over the defaults.
+
+    `defaults` may be None to use the built-in defaults alone. A missing
+    defaults file is not an error: the code defaults match what it ships with.
+    """
+    path = Path(path)
+    doc = _read_yaml(path)
+
+    defaults_doc = _read_yaml(defaults, required=False) if defaults else None
+    if defaults_doc is not None:
+        doc = merge_layers(defaults_doc, doc)
+    else:
+        defaults = None
 
     solvers = _parse_solvers(doc)
 
@@ -189,6 +251,7 @@ def load_config(path) -> ExperimentConfig:
 
     config = ExperimentConfig(
         source=path,
+        defaults_source=Path(defaults) if defaults else None,
         name=str(doc.get("name") or path.stem),
         output_prefix=str(doc.get("output_prefix") or path.stem),
         solvers=solvers,

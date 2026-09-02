@@ -10,10 +10,8 @@ benchmarks:
   dirs:
     - /mnt/baranem/uf_bench
 
-run:
-  timeout: 30.0
-  runs: 3
-  wall_hours: 24.0
+# Everything else — timeout, repeats, revalidation policy — comes from
+# configs/defaults.yaml.
 
 binaries:
   stp: /home/avj/clones/stp/master/build-release/stp
