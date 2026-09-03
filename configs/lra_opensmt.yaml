@@ -1,0 +1,80 @@
+# OpenSMT against stp-lra's new_simplex branch on the linear-arithmetic
+# corpus: the reference solver the branch has been measured against since
+# its first round, and STP on the backend that won the three-way comparison
+# (configs/lra_simplex.yaml), CaDiCaL, with the theory propagator driving.
+#
+#   ./run_comparison.py configs/lra_opensmt.yaml
+#
+# OpenSMT is the baseline: every "vs opensmt" number in the branch's
+# BENCHMARK_STATUS.md was taken that way round. The two solve the same files
+# and both print sat/unsat, so a sat/unsat split between the columns is a
+# bug in one of them, not a result -- the runner reports those separately,
+# in <output>_answer_disagreements.csv, and the corpus carries the expected
+# status in every file's (set-info :status ...).
+#
+# Both binaries are plain -O3 Release builds of their own source trees:
+# OpenSMT's CMake defaults to Release, which is -O3 -DNDEBUG; STP's Release
+# is -O3 with LTO, PGO and -mtune=native all off, the same optimisation
+# story on both sides. A PGO or LTO build of either belongs in a column of
+# its own, not in this one.
+name: OpenSMT vs stp-lra with CaDiCaL (new_simplex)
+output_prefix: lra_opensmt
+
+benchmarks:
+  dirs:
+    # Non-incremental only, deliberately. STP's incremental driver hands every
+    # Real query to the batch coordinator, so the 3,068 files under
+    # lra_bench/incremental would measure the batch path over again rather
+    # than anything incremental. This is 3,037 files: QF_LRA 1,753 and
+    # QF_UFLRA 1,284.
+    - /mnt/baranem/lra_bench/non-incremental
+
+run:
+  # The budget BENCHMARK_STATUS.md measures this branch at, so the numbers
+  # here can be read beside the ones there. Everything else -- repeats,
+  # revalidation policy -- comes from configs/defaults.yaml.
+  timeout: 20.0
+
+report:
+  # A 24s cutoff would be inert against a 20s timeout, so score at half the
+  # budget and at all of it.
+  virtual_timeouts: [10, 20]
+
+binaries:
+  # v2.9.2-35-g15b42c6f, the commit the branch's own exact engine was once
+  # derived from, built from the checkout in Release with the test suite off:
+  #
+  #   cd /home/avj/clones/opensmt
+  #   cmake -S . -B build-release -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  #       -DPACKAGE_TESTS=OFF -DBUILD_SHARED_LIBS=OFF
+  #   cmake --build build-release -j
+  #
+  # It takes the .smt2 path as its only argument and needs no flags.
+  opensmt: /home/avj/clones/opensmt/build-release/opensmt
+  # The three-backend worktree build configs/lra_simplex.yaml describes; only
+  # its CaDiCaL is exercised here. A machine that builds either elsewhere pins
+  # its own paths in configs/local.yaml rather than editing this file.
+  stp: /home/avj/clones/stp-lra/new_simplex/build-up/stp
+
+arg_groups:
+  stp:
+    # SMT-LIB2 is already what the parser falls back to with no format flag,
+    # but this run should not change meaning if that default moves.
+    - --SMTLIB2
+    # The winning backend, named rather than left to the build's default
+    # order, which puts CryptoMiniSat first when it is compiled in.
+    - --cadical
+    # Both are on by default today. Pinned so that the comparison cannot
+    # silently become a lazy loop if either default flips: the theory
+    # propagator is what this column is, and the float driver is what
+    # drives it.
+    - --lra-theory-propagation=1
+    - --lra-float-driver=1
+
+solvers:
+  - name: opensmt
+    binary: opensmt
+
+  - name: stp-cadical
+    binary: stp
+    arg_groups: [stp]
