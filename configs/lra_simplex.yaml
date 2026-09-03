@@ -1,17 +1,23 @@
-# The two simplex implementations on stp-lra's new_simplex branch, against
-# each other: one binary, one option.
+# The linear-arithmetic theory propagator under the three SAT backends STP
+# can host it on, against each other: one binary, one flag per column.
 #
 #   ./run_comparison.py configs/lra_simplex.yaml
 #
-# --lra-float-driver decides which one drives the partial theory checks the
-# SAT search asks for. Off (the branch default) they are answered by the
-# exact-rational simplex directly. On, a double-precision simplex answers
-# them and every conflict and model it produces is re-derived exactly, so the
-# answers are meant to be identical and only the time should move. A sat/unsat
-# split between the two columns is therefore a bug, not a result -- the runner
-# reports those separately, in <output>_answer_disagreements.csv.
-
-name: LRA simplex implementations (new_simplex)
+# The solve is the same in every column -- the double-precision simplex
+# driving the partial checks through the backend's IPASIR-UP interface, every
+# conflict and model re-derived by the exact engine, lemmas on demand -- so
+# the answers are meant to be identical and only the time should move. A
+# sat/unsat split between columns is therefore a bug, not a result; the runner
+# reports those separately, in <output>_answer_disagreements.csv. CaDiCaL is
+# the baseline because it is the backend every number in BENCHMARK_STATUS.md
+# was measured on.
+#
+# This replaces the earlier two-column comparison of the exact and float
+# simplex implementations, which the float driver's promotion has settled:
+# `--lra-float-driver=0` still selects the exact engine as the driver, and a
+# column with it can be added back beside these if that comparison is wanted
+# again.
+name: LRA propagator under three SAT backends (new_simplex)
 output_prefix: lra_simplex
 
 benchmarks:
@@ -35,36 +41,60 @@ report:
   virtual_timeouts: [10, 20]
 
 binaries:
-  # Not built yet at the time of writing:
+  # A build with all three backends compiled in, from the worktree so the
+  # results are named by its commit. The recipe (BENCHMARK_STATUS.md, "The
+  # propagator under three backends"): CryptoMiniSat built shared into a
+  # prefix of its own so STP's CaDiCaL stays the 3.0.1 it pins --
+  #
   #   cd /home/avj/clones/stp-lra/new_simplex
-  #   ./configure.sh release --name=build-release && make -C build-release -j
-  # A machine that builds it elsewhere pins its own path in configs/local.yaml
-  # rather than editing this file.
-  stp: /home/avj/clones/stp-lra/new_simplex/build-release/stp
+  #   ./scripts/deps/setup-cms.sh -DBUILD_SHARED_LIBS=ON \
+  #       -DCMAKE_INSTALL_PREFIX=$PWD/deps/cms-install
+  #   cmake -S . -B build-up -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  #       -DENABLE_AUTO_DOWNLOAD=ON -DUSE_CADICAL=ON -DUSE_MINISAT=ON \
+  #       -DUSE_CRYPTOMINISAT=ON \
+  #       -Dcryptominisat5_DIR=$PWD/deps/cms-install/lib/cmake/cryptominisat5 \
+  #       -Dcadical_DIR=$PWD/deps/cms-install/lib64/cmake/cadical \
+  #       -Dcadiback_DIR=$PWD/deps/cms-install/lib64/cmake/cadiback
+  #   cmake --build build-up -j
+  #
+  # A build-tree binary carries the CryptoMiniSat prefix in its RUNPATH, so
+  # no loader path is needed. `stp --version` should say
+  # "cadical 3.0.1, cryptominisat 5.14.7, minisat"; a build whose CaDiCaL
+  # reads 2.1.3 fell back to the one CryptoMiniSat bundles. A machine that
+  # builds it elsewhere pins its own path in configs/local.yaml rather than
+  # editing this file.
+  stp: /home/avj/clones/stp-lra/new_simplex/build-up/stp
 
 arg_groups:
   common:
     # SMT-LIB2 is already what the parser falls back to with no format flag,
     # but this run should not change meaning if that default moves.
     - --SMTLIB2
-    # The float driver is documented as taking effect "under
-    # --lra-theory-propagation", so it is pinned on for both columns rather
-    # than left to a default. It is on by default today; if that flips, the
-    # comparison would silently become a no-op with both columns identical.
+    # Both are on by default today. Pinned so that the comparison cannot
+    # silently become one of lazy loops if either default flips: the theory
+    # propagator is what these columns are about, and the float driver is
+    # what drives it.
     - --lra-theory-propagation=1
+    - --lra-float-driver=1
+    # Not --threads=1: it excludes every backend flag but --cryptominisat, so
+    # naming it here would fail two of the three columns. One thread is the
+    # default, and CryptoMiniSat hosts a propagator single-threaded only; a
+    # thread count above one would silently turn the propagator off there.
 
-# These are CLI11 *options*, not flags -- tools/stp/main.cpp registers them
-# with add_option -- so they must be written =0 / =1. Bare, they would take
-# the .smt2 path as their value and STP would exit before solving, which the
-# harness records as `error` on every file rather than as the argument
-# mistake it is.
+# The backend flags are CLI11 flags and take no value. They exclude each
+# other, so each column names exactly one.
 solvers:
-  - name: exact-simplex
+  - name: cadical
     binary: stp
     arg_groups: [common]
-    args: [--lra-float-driver=0]
+    args: [--cadical]
 
-  - name: float-simplex
+  - name: cryptominisat
     binary: stp
     arg_groups: [common]
-    args: [--lra-float-driver=1]
+    args: [--cryptominisat]
+
+  - name: minisat
+    binary: stp
+    arg_groups: [common]
+    args: [--minisat]
