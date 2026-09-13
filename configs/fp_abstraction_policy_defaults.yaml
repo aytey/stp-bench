@@ -1,0 +1,44 @@
+# The decisive run for the three constant-operand policies' defaults: the
+# behaviour before them, the behaviour they were committed with, and the
+# proposal the first four campaigns point at -- constants abstracted by the
+# two arithmetic abstractions (KLEE's Horner polynomials are products by
+# constants and the layer wins on them) and left exact by the equality
+# abstraction (a record there is a free Boolean the congruence refinement
+# pins a round at a time). One campaign, so the arms share a load.
+name: constant-operand policy defaults (decisive)
+output_prefix: fp_abs_defaults
+
+benchmarks:
+  dirs:
+    - /home/avj/fp-abs-results/v3/bench-v3/queries
+
+run:
+  timeout: 60.0
+  runs: 1
+  workers: 24
+
+revalidation:
+  enabled: false
+
+binaries:
+  stp: /home/avj/clones/stp/fp_cegar/build-rel-exp/stp
+
+arg_groups:
+  base: [--cadical, --bv-eq-abstraction=1, --bv-term-abstraction=1, --fp-abstraction=1]
+
+solvers:
+  - name: pre-change
+    binary: stp
+    arg_groups: [base]
+    args: [--fp-abstraction-constant-operands=on, --bv-term-abstraction-constant-operands=1, --bv-eq-abstraction-constant-side=1]
+  - name: proposed
+    binary: stp
+    arg_groups: [base]
+    args: [--fp-abstraction-constant-operands=on, --bv-term-abstraction-constant-operands=1]
+  - name: committed
+    binary: stp
+    arg_groups: [base]
+  - name: fp-abs-only
+    binary: stp
+    arg_groups: [base]
+    args: [--fp-abstraction-constant-operands=on]

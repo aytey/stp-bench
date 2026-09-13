@@ -1,0 +1,37 @@
+# Whether the equality abstraction belongs in the floating-point arms: on
+# the converted flux-balance QF_FP queries it leaves ~115 symbolic 128-bit
+# equalities as free Booleans with proxied sides and the first SAT call
+# never returns, where the term abstraction alone answers in seconds. This
+# measures it on the KLEE hard-solved list, for the headline arm and for
+# the bit-vector arm.
+name: equality abstraction on/off in the FP arms (KLEE)
+output_prefix: fp_abs_eqonoff
+
+benchmarks:
+  dirs:
+    - /home/avj/fp-abs-results/v3/bench-v3/queries
+
+run:
+  timeout: 60.0
+  runs: 1
+  workers: 24
+
+revalidation:
+  enabled: false
+
+binaries:
+  stp: /home/avj/clones/stp/fp_cegar/build-rel-exp/stp
+
+solvers:
+  - name: fp-bv64
+    binary: stp
+    args: [--cadical, --bv-eq-abstraction=1, --bv-term-abstraction=1, --fp-abstraction=1]
+  - name: fp-term-only
+    binary: stp
+    args: [--cadical, --bv-term-abstraction=1, --fp-abstraction=1]
+  - name: bv64
+    binary: stp
+    args: [--cadical, --bv-eq-abstraction=1, --bv-term-abstraction=1]
+  - name: term-only
+    binary: stp
+    args: [--cadical, --bv-term-abstraction=1]

@@ -1,0 +1,95 @@
+# What the floating-point abstraction is worth, on the KLEE-derived corpus.
+#
+#   ./run_comparison.py configs/fp_abstraction_v5.yaml
+#
+# Four arms, all STP: the controlled comparison of what the floating-point
+# abstraction is worth, and what widening its operation set costs.
+#
+#   stp-exact      no abstraction at all
+#   stp-bv64       the bit-vector abstraction alone -- the baseline the
+#                  floating-point layer is measured against
+#   stp-fp-bv64    the same, plus the floating-point layer over the default
+#                  operation set
+#   stp-fp-bv64-all  the same over every abstractable operation
+#
+# Changes from the previous campaign, and why:
+#
+# THE ALL-OPS ARM STAYS. Widening the abstracted operation set was a wash in
+# the previous campaign -- 7052 solved against 7079 for the default set,
+# within noise at every width -- and that is the point: it is what says the
+# default set of multiply, divide, square root and fused multiply-add is a
+# choice rather than an arbitrary cut. Reporting that from the previous
+# campaign is not open to us, since it was measured with the kept trail on
+# and without the refinement fix, so it is measured here alongside the rest.
+#
+# TRAIL REUSE IS OFF ON THE TWO ABSTRACTION ARMS. --refinement-trail-reuse
+# keeps the SAT solver's trail between refinement rounds so that a round does
+# not re-descend before it searches. It was tuned on queries that refine a
+# handful of times. A quad-precision query whose float comparisons are
+# blasted over packed values refines a hundred times or more, and there the
+# kept trail is the dominant cost: on the 28 such queries the previous
+# campaign lost, the baseline solves 2 with it and 21 without, the
+# floating-point arm 21 with and 23 without, and no arm measured is worse
+# without it. Leaving it on does not make the comparison unfair -- both arms
+# carry it -- but it depresses both, and it depresses the baseline by far the
+# most, which flatters the floating-point layer. The honest run turns it off.
+#
+# It is passed rather than defaulted because the flag is upstream's and its
+# default is right for the corpora it was tuned on. Whether that default
+# should move is a separate question, and a separate measurement.
+#
+# stp-exact does not carry the flag: with no abstraction there is no
+# refinement loop for a trail to be kept across, so it would be inert.
+
+name: FP abstraction on the KLEE float corpus (STP only)
+output_prefix: fp_abs_vs_bwz
+
+benchmarks:
+  dirs:
+    - /mnt/baranem/fp-benchmarks/bench-v3/queries
+
+run:
+  timeout: 60.0
+  workers: 12
+
+binaries:
+  stp: /home/avj/clones/stp/campaign-builds/fp-cegar-snapshot/build/stp
+
+arg_groups:
+  sat:
+    - --cadical
+  bvabs:
+    - --bv-eq-abstraction=1
+    - --bv-term-abstraction=1
+  notrail:
+    - --refinement-trail-reuse=0
+  fpabs:
+    - --fp-abstraction=1
+  allops:
+    - --fp-abstraction-ops=all
+
+solvers:
+  - name: stp-exact
+    binary: stp
+    arg_groups: [sat]
+
+  - name: stp-bv64
+    binary: stp
+    arg_groups: [sat, bvabs, notrail]
+
+  - name: stp-fp-bv64
+    binary: stp
+    arg_groups: [sat, bvabs, notrail, fpabs]
+
+  - name: stp-fp-bv64-all
+    binary: stp
+    arg_groups: [sat, bvabs, notrail, fpabs, allops]
+
+  # Uncomment to settle the trail-reuse question inside this run rather than
+  # in a separate measurement: identical to stp-bv64 but with the flag left
+  # at its default. Costs roughly two hours. The paper's scripts read the
+  # arms they name, so an extra one here is ignored by them.
+  #
+  # - name: stp-bv64-trail
+  #   binary: stp
+  #   arg_groups: [sat, bvabs]

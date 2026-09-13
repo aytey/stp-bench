@@ -1,0 +1,37 @@
+# Is the floating-point layer worth having on the converted flux-balance
+# QF_FP benchmarks, at the branch's current defaults? Four arms on one
+# binary: plain exact lowering, the bit-vector abstractions alone, the
+# headline configuration, and the headline configuration without the
+# equality abstraction, which section 5.3 of the recon note makes the
+# larger cost on this corpus.
+name: FP layer against plain lowering on the converted QF_FP corpus
+output_prefix: fp_vs_plain
+
+benchmarks:
+  dirs:
+    - /home/avj/clones/benchmark-submission/non-incremental/QF_FP/20260824-LatendresseFP-AndrewTeylu
+
+run:
+  timeout: 120.0
+  runs: 1
+  workers: 24
+
+revalidation:
+  enabled: false
+
+binaries:
+  stp: /home/avj/clones/stp/campaign-builds/fp-cegar-4c4da0a4ae1e/build/stp
+
+solvers:
+  - name: exact
+    binary: stp
+    args: [--cadical]
+  - name: bv64
+    binary: stp
+    args: [--cadical, --bv-eq-abstraction=1, --bv-term-abstraction=1]
+  - name: fp-bv64
+    binary: stp
+    args: [--cadical, --bv-eq-abstraction=1, --bv-term-abstraction=1, --fp-abstraction=1]
+  - name: fp-term-only
+    binary: stp
+    args: [--cadical, --bv-term-abstraction=1, --fp-abstraction=1]

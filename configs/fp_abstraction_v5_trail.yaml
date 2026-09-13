@@ -1,0 +1,57 @@
+# The trail-reuse ablation for the v5 campaign.
+#
+#   ./run_comparison.py configs/fp_abstraction_v5_trail.yaml
+#
+# The main campaign passes --refinement-trail-reuse=0 on every arm that has a
+# refinement loop. This measures the same two arms with the flag at its
+# default, so the evaluation can state how much of the result depends on that
+# choice rather than leaving it as a setting nobody checked.
+#
+# It is the two arms the headline comparison rests on, and nothing else: the
+# no-abstraction arm has no refinement loop for a trail to be kept across, and
+# the all-ops arm answers a different question.
+#
+# What is already known, from two targeted probes on one binary each:
+# keeping the trail costs the bit-vector baseline 19 of 28 hard quad-precision
+# queries, and saves the floating-point arm half its PAR2 on 81 hard
+# double-precision ones. So the flag is expected to move the two widths in
+# opposite directions, and the point of this run is to say by how much over
+# the whole corpus.
+#
+# Same binary, corpus, repeats and timeouts as the main pass, so the two are
+# read side by side. The trail-off numbers come from that pass rather than
+# being repeated here; the machine and binary are the same and the
+# no-abstraction arm puts campaign-to-campaign drift at about 2% of PAR2,
+# which is far below the effect measured.
+
+name: Trail-reuse ablation for the v5 campaign
+output_prefix: fp_abs_trail_on
+
+benchmarks:
+  dirs:
+    - /home/avj/fp-abs-results/v5/bench-v3/queries
+
+run:
+  timeout: 60.0
+  workers: 18
+
+binaries:
+  stp: /home/avj/clones/stp/campaign-builds/fp-cegar-snapshot/build/stp
+
+arg_groups:
+  sat:
+    - --cadical
+  bvabs:
+    - --bv-eq-abstraction=1
+    - --bv-term-abstraction=1
+  fpabs:
+    - --fp-abstraction=1
+
+solvers:
+  - name: stp-bv64-trail
+    binary: stp
+    arg_groups: [sat, bvabs]
+
+  - name: stp-fp-bv64-trail
+    binary: stp
+    arg_groups: [sat, bvabs, fpabs]

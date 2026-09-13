@@ -1,0 +1,58 @@
+# Does the kept refinement trail help or hurt where there is no floating point?
+#
+#   ./run_comparison.py configs/trail_reuse_pure_bv.yaml
+#
+# --refinement-trail-reuse keeps the SAT solver's trail between refinement
+# rounds. On the float corpus it is worth 19 of 28 hard quad-precision queries
+# to the bit-vector baseline when it is off, and half the PAR2 of the
+# floating-point arm at binary64 when it is on -- opposite directions at the
+# two widths. That is enough to settle what a paper should report and not
+# enough to change a default, because the rule that follows from it keys on
+# float width, and a QF_BV or QF_UFBV query has no float width to read. The
+# users a default change reaches are exactly the ones no measurement covers.
+#
+# So this measures the flag where the refinement loop runs over pure
+# bit-vector work: once at stock settings, where the loop serves array reads
+# and uninterpreted functions, and once with both bit-vector abstractions on,
+# where it serves those as well. Four arms, one binary, one corpus.
+#
+# What it decides: whether the upstream fix is a default flip, an adaptive
+# rule keyed on round count, or nothing at all.
+
+name: Trail reuse on pure bit-vector corpora
+output_prefix: trail_pure_bv
+
+benchmarks:
+  dirs:
+    - /mnt/baranem/smt2_problems/non-incremental/QF_UFBV/20241113-Certora
+
+run:
+  timeout: 60.0
+  runs: 1
+  workers: 18
+
+revalidation:
+  enabled: false
+
+binaries:
+  stp: /home/avj/clones/stp/campaign-builds/fp-cegar-dc22dd12/build/stp
+
+arg_groups:
+  sat:      [--cadical]
+  bvabs:    [--bv-eq-abstraction=1, --bv-term-abstraction=1]
+  trailoff: [--refinement-trail-reuse=0]
+  trailon:  [--refinement-trail-reuse=1]
+
+solvers:
+  - name: stock-trail-on
+    binary: stp
+    arg_groups: [sat, trailon]
+  - name: stock-trail-off
+    binary: stp
+    arg_groups: [sat, trailoff]
+  - name: bvabs-trail-on
+    binary: stp
+    arg_groups: [sat, bvabs, trailon]
+  - name: bvabs-trail-off
+    binary: stp
+    arg_groups: [sat, bvabs, trailoff]

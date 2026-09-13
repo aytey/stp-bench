@@ -1,0 +1,73 @@
+# Ablations of the floating-point abstraction, each one thing removed from
+# the headline configuration of configs/fp_abstraction_vs_bitwuzla.yaml.
+#
+#   ./run_comparison.py configs/fp_abstraction_ablations.yaml
+#
+# The baseline is re-run here rather than reused from the main campaign so
+# that every arm shares one load regime. One run per file at a 120 s cap
+# with no revalidation: that is the main campaign's virtual timeout, so the
+# solved counts and PAR2 are directly comparable with its tables.
+
+name: FP abstraction ablations (KLEE float corpus)
+output_prefix: fp_abs_ablate
+
+benchmarks:
+  dirs:
+    - /mnt/baranem/fp-benchmarks/bench-v2/queries
+
+run:
+  timeout: 120.0
+  runs: 1
+  workers: 16
+
+revalidation:
+  enabled: false
+
+binaries:
+  stp: /home/avj/clones/stp/campaign-builds/fp-cegar-4c4da0a4ae1e/build/stp
+
+arg_groups:
+  base:
+    - --cadical
+    - --bv-eq-abstraction=1
+    - --bv-term-abstraction=1
+    - --fp-abstraction=1
+
+solvers:
+  - name: fp-bv64
+    binary: stp
+    arg_groups: [base]
+
+  # the rule tiers, cumulative: 0 the class/sign shell only, 1 adds order,
+  # 2 adds the exponent and significand bands and overflow selection; 3
+  # (identities) is the baseline
+  - name: tiers-0
+    binary: stp
+    arg_groups: [base]
+    args: [--fp-abstraction-tiers=0]
+  - name: tiers-1
+    binary: stp
+    arg_groups: [base]
+    args: [--fp-abstraction-tiers=1]
+  - name: tiers-2
+    binary: stp
+    arg_groups: [base]
+    args: [--fp-abstraction-tiers=2]
+
+  # the significand bands alone (the rest of tier 2 stays)
+  - name: no-bands
+    binary: stp
+    arg_groups: [base]
+    args: [--fp-abstraction-significand-bits=0, --fp-abstraction-significand-bits-wide=0]
+
+  # the relational lemmas (congruence and monotonicity between records)
+  - name: no-relational
+    binary: stp
+    arg_groups: [base]
+    args: [--fp-abstraction-relational=0]
+
+  # no value lemmas: after the shape and relational lemmas, straight to release
+  - name: no-values
+    binary: stp
+    arg_groups: [base]
+    args: [--fp-abstraction-values=0]

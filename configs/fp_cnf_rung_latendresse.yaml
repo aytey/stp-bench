@@ -1,0 +1,46 @@
+# The CNF rung on the converted flux-balance QF_FP corpus, nothing
+# abstracted: cnf-auto (new-medium for a circuit this size, very-low under
+# the equality abstraction alone) against gia-low, beside the bit-vector
+# abstraction arm whose only effect on these linear queries below binary128
+# is the gia-low rung it switches on. Built on one binary32 query: 67 s
+# under auto, 2.6 s under gia-low, 2.6 s under the abstraction arm.
+name: CNF rung on the converted QF_FP corpus
+output_prefix: fp_cnf_rung
+
+benchmarks:
+  dirs:
+    - /home/avj/clones/benchmark-submission/non-incremental/QF_FP/20260824-LatendresseFP-AndrewTeylu
+
+run:
+  timeout: 120.0
+  runs: 1
+  workers: 24
+
+revalidation:
+  enabled: false
+
+binaries:
+  stp: /home/avj/clones/stp/fp_cegar/build-rel-exp/stp
+
+solvers:
+  - name: exact-auto
+    binary: stp
+    args: [--cadical]
+  - name: exact-gia-low
+    binary: stp
+    args: [--cadical, --cnf-generation-effort=gia-low]
+  - name: exact-new-medium
+    binary: stp
+    args: [--cadical, --cnf-generation-effort=new-medium]
+  - name: bv64
+    binary: stp
+    args: [--cadical, --bv-eq-abstraction=1, --bv-term-abstraction=1]
+  - name: fp-bv64-gia-low
+    binary: stp
+    args: [--cadical, --bv-eq-abstraction=1, --bv-term-abstraction=1, --fp-abstraction=1]
+  - name: term-only
+    binary: stp
+    args: [--cadical, --bv-term-abstraction=1]
+  - name: fp-term-only
+    binary: stp
+    args: [--cadical, --bv-term-abstraction=1, --fp-abstraction=1]

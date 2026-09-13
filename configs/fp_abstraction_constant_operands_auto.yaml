@@ -1,0 +1,45 @@
+# The automatic constant-operand policy against both fixed settings. `auto`
+# abstracts an operation with a constant float operand when the
+# configuration also abstracts one of two operands it does not know -- the
+# polynomial shape -- and declines it otherwise, the query then being linear
+# over its coefficients. `on` is what the solver did before the policy
+# existed and what the KLEE corpus wants; `off` is what the converted
+# flux-balance corpus wants. The equality abstraction leaves its constant
+# side exact on every arm (its own default).
+name: "constant-operand policy: auto against on and off"
+output_prefix: fp_abs_auto
+
+benchmarks:
+  dirs:
+    - /home/avj/fp-abs-results/v3/bench-v3/queries
+
+run:
+  timeout: 60.0
+  runs: 1
+  workers: 24
+
+revalidation:
+  enabled: false
+
+binaries:
+  stp: /home/avj/clones/stp/fp_cegar/build-rel-exp/stp
+
+arg_groups:
+  base: [--cadical, --bv-eq-abstraction=1, --bv-term-abstraction=1, --fp-abstraction=1]
+
+solvers:
+  - name: auto
+    binary: stp
+    arg_groups: [base]
+  - name: "on"
+    binary: stp
+    arg_groups: [base]
+    args: [--fp-abstraction-constant-operands=on]
+  - name: "off"
+    binary: stp
+    arg_groups: [base]
+    args: [--fp-abstraction-constant-operands=off]
+  - name: off-both
+    binary: stp
+    arg_groups: [base]
+    args: [--fp-abstraction-constant-operands=off, --bv-term-abstraction-constant-operands=0]

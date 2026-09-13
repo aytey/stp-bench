@@ -1,0 +1,56 @@
+# Does a record for a wide operation with a constant operand pay at all?
+#
+# Upstream caps the value-blocking allowance of such a record at one
+# (--bv-term-abstraction-constant-operand-limit, 679cfb1a), on the evidence
+# of this corpus: on 0730 every one of the 307 value-blocking lemmas of a
+# two-minute run was for a multiplication or division by 10^10, whose exact
+# encoding is a constant's shift-and-add -- 34,000 clauses at 256 bits where
+# a symbolic operand costs half a million. This measures the step past the
+# cap: not making the record in the first place
+# (--bv-term-abstraction-constant-operands=0), so that the operation is
+# lowered exactly from the start.
+#
+# QF_UFBV, so --uf-bv-term-abstraction (auto) turns the term abstraction on
+# for these queries by itself; every arm is otherwise stock.
+#
+# The first arm is upstream's own binary at the commit the branch sits on,
+# built the same way. It is here to show that the branch's binary is
+# upstream on these queries -- nothing it adds is reachable without a
+# floating-point operation -- so that the difference the other arms measure
+# is the knob and not the tree it lives in.
+#
+#   ~/fp-abs-results/certora-constant-operands.sh
+#   RUNS=3 ~/fp-abs-results/certora-constant-operands.sh
+
+name: constant-operand records on QF_UFBV/20241113-Certora
+output_prefix: bv_const_certora
+
+benchmarks:
+  dirs:
+    - /mnt/baranem/smt2_problems/non-incremental/QF_UFBV/20241113-Certora
+
+run:
+  timeout: 60.0
+  runs: 1
+  workers: 24
+
+revalidation:
+  enabled: false
+
+binaries:
+  upstream: /home/avj/clones/stp/campaign-builds/upstream-ad383269/build/stp
+  branch: /home/avj/clones/stp/campaign-builds/fp-cegar-85903b6fce13/build/stp
+
+solvers:
+  - name: upstream
+    binary: upstream
+    args: [--cadical]
+  - name: branch-default
+    binary: branch
+    args: [--cadical]
+  - name: no-constant-records
+    binary: branch
+    args: [--cadical, --bv-term-abstraction-constant-operands=0]
+  - name: uncapped
+    binary: branch
+    args: [--cadical, --bv-term-abstraction-constant-operand-limit=0]

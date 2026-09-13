@@ -1,0 +1,51 @@
+# Diagnostic, not paper data: the evaluated commit (ddef09bd) against the
+# branch head (e2f9640e) on the WHOLE bench-v3 corpus, both from the fresh
+# optimised builds under campaign-builds/ (configure.sh release --lto
+# --tune-native, gcc, dependencies in-tree). One run at the paper's cap, no
+# revalidation: enough to settle a regression on the full corpus and whether
+# --fp-abstraction-restart-width=128 (splice below 128, restart from 128)
+# earns the default, and -- with the symmetric arms -- whether that verdict
+# depends on the commit. The 1,241-query hard-solved A/B could only see
+# losses; this sees the gains on what the old build never solved.
+#
+#   ./run_comparison.py configs/fp_abstraction_old_vs_new_full.yaml --no-override \
+#       --dir ~/fp-abs-results/v3/bench-v3/queries --workers 16 \
+#       --output ~/fp-abs-results/v3/old_vs_new_full.csv --force
+
+name: STP ddef09bd vs e2f9640e, full corpus, optimised builds
+output_prefix: fp_abs_old_vs_new_full
+
+benchmarks:
+  dirs:
+    - /home/avj/fp-abs-results/v3/bench-v3/queries
+
+run:
+  timeout: 60.0
+  runs: 1
+  workers: 16
+
+revalidation:
+  enabled: false
+
+binaries:
+  old: /home/avj/clones/stp/campaign-builds/fp-cegar-ddef09bd6507/build/stp
+  new: /home/avj/clones/stp/campaign-builds/fp-cegar-e2f9640eafee/build/stp
+
+arg_groups:
+  base: [--cadical, --bv-eq-abstraction=1, --bv-term-abstraction=1, --fp-abstraction=1]
+
+solvers:
+  - name: old-fp-bv64
+    binary: old
+    arg_groups: [base]
+  - name: new-fp-bv64
+    binary: new
+    arg_groups: [base]
+  - name: old-fp-bv64-rw128
+    binary: old
+    arg_groups: [base]
+    args: [--fp-abstraction-restart-width=128]
+  - name: new-fp-bv64-rw128
+    binary: new
+    arg_groups: [base]
+    args: [--fp-abstraction-restart-width=128]

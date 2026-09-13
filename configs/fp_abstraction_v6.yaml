@@ -1,0 +1,78 @@
+# The final campaign: every configuration at both trail-reuse settings.
+#
+#   ./run_comparison.py configs/fp_abstraction_v6.yaml
+#
+# Eight arms, the four configurations crossed with --refinement-trail-reuse.
+#
+# WHY THE CROSS. The flag keeps the SAT solver's trail between refinement
+# rounds. It was tuned for queries that refine a handful of times; a
+# quad-precision query whose float comparisons are blasted over packed values
+# refines a hundred times or more, and there it is the dominant cost. Measured
+# on the previous campaign it moves the two widths in opposite directions, so
+# the evaluation has to report the result under both settings rather than pick
+# one and hope. Crossing it with every configuration, in one pass, is what
+# lets the ordering table be read across a row and down a column.
+#
+# WHY EVERY ARM PASSES IT EXPLICITLY, INCLUDING =1. The previous campaign left
+# the "on" arms to inherit the default, and left it off the no-abstraction arm
+# entirely, on the assumption that an arm with no abstraction has no
+# refinement loop for a trail to be kept across. That assumption is false: the
+# loop also serves array reads, and these queries model memory as arrays, so
+# the flag engages on 37 of 40 of them with no abstraction flags at all. The
+# no-abstraction arm is therefore crossed like the rest, and nothing inherits
+# a default that a later upstream change could silently reinterpret.
+#
+# NAMING. The unsuffixed names are the trail-off arms, because that is the
+# setting the main table currently uses; the -trail suffix is the same
+# configuration with the trail kept. The paper's scripts read the unsuffixed
+# set, so if the data says the main table should be the other setting, that is
+# one edit to the arm list and no re-measurement.
+
+name: FP abstraction on the KLEE float corpus, both trail settings
+output_prefix: fp_abs_v6
+
+benchmarks:
+  dirs:
+    - /mnt/baranem/fp-benchmarks/bench-v3/queries
+
+run:
+  timeout: 60.0
+  workers: 18
+
+binaries:
+  stp: /home/avj/clones/stp/campaign-builds/fp-cegar-dc22dd12/build/stp
+
+arg_groups:
+  sat:      [--cadical]
+  bvabs:    [--bv-eq-abstraction=1, --bv-term-abstraction=1]
+  fpabs:    [--fp-abstraction=1]
+  allops:   [--fp-abstraction-ops=all]
+  trailoff: [--refinement-trail-reuse=0]
+  trailon:  [--refinement-trail-reuse=1]
+
+solvers:
+  - name: stp-exact
+    binary: stp
+    arg_groups: [sat, trailoff]
+  - name: stp-bv64
+    binary: stp
+    arg_groups: [sat, bvabs, trailoff]
+  - name: stp-fp-bv64
+    binary: stp
+    arg_groups: [sat, bvabs, fpabs, trailoff]
+  - name: stp-fp-bv64-all
+    binary: stp
+    arg_groups: [sat, bvabs, fpabs, allops, trailoff]
+
+  - name: stp-exact-trail
+    binary: stp
+    arg_groups: [sat, trailon]
+  - name: stp-bv64-trail
+    binary: stp
+    arg_groups: [sat, bvabs, trailon]
+  - name: stp-fp-bv64-trail
+    binary: stp
+    arg_groups: [sat, bvabs, fpabs, trailon]
+  - name: stp-fp-bv64-all-trail
+    binary: stp
+    arg_groups: [sat, bvabs, fpabs, allops, trailon]

@@ -1,0 +1,44 @@
+# A/B: the evaluated build (ddef09bd, build-rel) against the current HEAD
+# (build-rel-head), same flags, on one file list, in one campaign so both
+# see the same load. Two arms per build: the headline configuration and
+# the no-FP baseline, so a regression can be placed in the abstraction or
+# outside it.
+#
+#   ./run_comparison.py configs/fp_abstraction_ab_head.yaml --file-list LIST --timeout 60 --runs 1 --no-revalidate
+
+name: STP ddef09bd vs HEAD (A/B)
+output_prefix: fp_abs_ab
+
+benchmarks:
+  dirs:
+    - /home/avj/fp-abs-results/v3/bench-v3/queries
+
+run:
+  timeout: 60.0
+  runs: 1
+  workers: 12
+
+revalidation:
+  enabled: false
+
+binaries:
+  old: /home/avj/clones/stp/fp_cegar/build-rel/stp
+  new: /home/avj/clones/stp/fp_cegar/build-rel-head/stp
+
+arg_groups:
+  bvabs: [--cadical, --bv-eq-abstraction=1, --bv-term-abstraction=1]
+  fpabs: [--fp-abstraction=1]
+
+solvers:
+  - name: old-fp-bv64
+    binary: old
+    arg_groups: [bvabs, fpabs]
+  - name: new-fp-bv64
+    binary: new
+    arg_groups: [bvabs, fpabs]
+  - name: old-bv64
+    binary: old
+    arg_groups: [bvabs]
+  - name: new-bv64
+    binary: new
+    arg_groups: [bvabs]

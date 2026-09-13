@@ -1,0 +1,62 @@
+# The seven ablations at the main table's trail setting, three runs.
+#
+# The single-run pass in the v6 campaign found two of them changing sign with
+# the trail: removing the value lemmas gained 14 solves with the trail off and
+# lost 16 with it on, and the significand bands did the same at smaller scale.
+# One run at 120 s cannot say whether a 14-query swing is real, and it is the
+# most exposed number in the evaluation: if it holds, two components of the
+# layer do not pay at the setting the paper reports. Three runs, medianed,
+# say whether it holds. The trail-on side is left at one run: its direction
+# matches the design and is not in question.
+
+name: FP abstraction ablations, trail off, three runs
+output_prefix: fp_abs_v6_ablate_off3
+
+benchmarks:
+  dirs:
+    - /home/avj/fp-abs-results/v6/bench-v3/queries
+
+run:
+  timeout: 120.0
+  runs: 3
+  workers: 18
+
+revalidation:
+  enabled: false
+
+binaries:
+  stp: /home/avj/clones/stp/campaign-builds/fp-cegar-dc22dd12/build/stp
+
+arg_groups:
+  base: [--cadical, --bv-eq-abstraction=1, --bv-term-abstraction=1, --fp-abstraction=1]
+  trailoff: [--refinement-trail-reuse=0]
+  trailon: [--refinement-trail-reuse=1]
+
+solvers:
+  - name: fp-bv64
+    binary: stp
+    arg_groups: [base, trailoff]
+  - name: tiers-0
+    binary: stp
+    arg_groups: [base, trailoff]
+    args: [--fp-abstraction-tiers=0]
+  - name: tiers-1
+    binary: stp
+    arg_groups: [base, trailoff]
+    args: [--fp-abstraction-tiers=1]
+  - name: tiers-2
+    binary: stp
+    arg_groups: [base, trailoff]
+    args: [--fp-abstraction-tiers=2]
+  - name: no-bands
+    binary: stp
+    arg_groups: [base, trailoff]
+    args: [--fp-abstraction-significand-bits=0, --fp-abstraction-significand-bits-wide=0]
+  - name: no-relational
+    binary: stp
+    arg_groups: [base, trailoff]
+    args: [--fp-abstraction-relational=0]
+  - name: no-values
+    binary: stp
+    arg_groups: [base, trailoff]
+    args: [--fp-abstraction-values=0]

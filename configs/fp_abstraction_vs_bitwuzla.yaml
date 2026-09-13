@@ -1,0 +1,173 @@
+# What the floating-point abstraction is worth, and where it leaves STP
+# against Bitwuzla, on the KLEE-derived corpus captured 2026-09-03.
+#
+#   ./run_comparison.py configs/fp_abstraction_vs_bitwuzla.yaml
+#
+# Seven arms: a 2x2 over the two factors that are genuinely open, plus the
+# baselines they need and the competitor.
+#
+#                      | BV abstraction >=64 | BV abstraction >=33
+#   -------------------+---------------------+--------------------
+#   no FP abstraction  | stp-bv64  (baseline)| stp-bv33
+#   FP, default ops    | stp-fp-bv64         | stp-fp-bv33
+#   FP, all ops        | stp-fp-bv64-all     | stp-fp-bv33-all
+#
+#   bitwuzla           | Bitwuzla's own defaults (its BV abstraction is on,
+#                      | from 33 bits)
+#
+# The two factors:
+#
+#   WIDTH. 64 is STP's default; 33 is Bitwuzla's. Running only at 64 leaves
+#   the STP/Bitwuzla comparison asymmetric on the narrow half of the corpus --
+#   below 64 bits only Bitwuzla's abstraction engages -- and running only at
+#   33 abandons STP's shipped default. Carrying both settles it with numbers
+#   instead of an argument, and gives `stp-bv33` as the width-matched baseline
+#   for the Bitwuzla comparison.
+#
+#   OP SET. --fp-abstraction defaults to mul,div,sqrt,fma. On this corpus that
+#   leaves 658 of the 6,212 abstractable queries with nothing to abstract at
+#   all (add/sub only, mostly binary32 and binary64) and takes only part of
+#   another 1,599. `all` adds add, sub, rem, rti, to_sbv and to_ubv. Whether
+#   that is a net win is open -- rti and rem are opt-in for a reason -- which
+#   is why it is an arm rather than a default flip.
+#
+# stp-bv64 is the baseline, so the report scores everything against STP with
+# BV abstraction on and FP abstraction off. That deliberately conflates two
+# changes for the bv33 FP arms;
+# for the matched pairs, rerun the report with `--solver-a stp-bv33`. The CSV
+# carries all seven arms, so any pairing can be recovered without re-running.
+
+name: FP abstraction vs Bitwuzla (KLEE float corpus)
+output_prefix: fp_abs_vs_bwz
+
+benchmarks:
+  # bench-v2: 7,598 queries (114 MB) dumped from KLEE runs of 18 numerical
+  # libraries built at binary16/32/64/128, one per (printer family, query),
+  # split 6,212 abstractable / 1,386 control. By widest float mentioned:
+  # 899 binary16, 1,401 binary32, 2,578 binary64, 1,910 binary128, and 810
+  # that mention no float at all.
+  #
+  # Three curation decisions shape what a result over it means:
+  #   - every binary128 query is kept, since that is the regime the cost model
+  #     says the technique wins and there are only ~1,900 of them;
+  #   - every other driver is capped at 25 queries, spread across the size
+  #     range, so that openlibm/jnf and gsl_sf_mathieu_a -- which between them
+  #     dominate the raw capture -- cannot carry the result on their own;
+  #   - the 1,386 control queries, which have nothing to abstract, are part of
+  #     the set rather than filtered out: they are where the abstraction has
+  #     to be shown to cost nothing.
+  #
+  # It supersedes bench-v1, whose filenames omitted the capture arm and so
+  # collided: 442 queries were overwritten by a same-named query from another
+  # arm, and 334 manifest rows described content that was not theirs.
+  #
+  # NOTE: /mnt/baranem is tmpfs on this host. Copy the corpus somewhere
+  # durable before treating a run over it as reproducible.
+  dirs:
+    - /mnt/baranem/fp-benchmarks/bench-v2/queries
+
+run:
+  # The corpus was captured under a 60 s solver cap, so a query needing longer
+  # than that never had to be answered for the path that produced it to exist.
+  # Matching the cap here keeps "timed out" meaning the same thing on both
+  # sides of the capture/replay boundary.
+  timeout: 60.0
+  # 24 cores, but campaigns here have historically been run saturated, which
+  # inflates per-file times by 3-4x. Every arm shares the load so the
+  # comparison holds; absolute seconds from a saturated run are not
+  # publishable numbers. 12 leaves the box usable alongside the run.
+  workers: 12
+
+binaries:
+  # Release, i.e. -DNDEBUG. build-s3 is RelWithDebInfo with assertions still
+  # ON; timing STP that way against a release Bitwuzla gives the comparison
+  # away on STP's own internal checks.
+  stp: /home/avj/clones/stp/campaign-builds/fp-cegar-4c4da0a4ae1e/build/stp
+  # build-rel, not build/: the older build/ tree was compiled from the
+  # fix-216-funsolver-uaf branch and its binary still reports d733897b, while
+  # the repo sits on main. The harness stamps the manifest from the REPO head,
+  # so that pairing would have recorded a provenance that was simply false.
+  # build-rel-lto is a clean meson release build (optimization 3, NDEBUG, no
+  # sanitizers, CaDiCaL) of main@a5e6e8a7 (CaDiCaL 3.0.1, gcc 15.2, LTO), built like the STP arms.
+  bitwuzla: /home/avj/clones/bitwuzla/main/build-rel-lto/src/main/bitwuzla
+
+arg_groups:
+  # CLI11 BOOLEAN options must be written =1: bare, they swallow the following
+  # token as their value and STP exits 255 before solving, which this harness
+  # records as `error` -- a loss on every file -- rather than as the typo it
+  # is.
+  # Every STP arm runs CaDiCaL. This build links CryptoMiniSat, and STP
+  # prefers CMS whenever it is compiled in, so the default here is CMS -- but
+  # on a 200-file sample of this corpus CaDiCaL beat it on BOTH arms: 64 vs
+  # 100 CPU-s with the abstraction off, and 51 vs 105 with it on. Leaving the
+  # default in place would have handed away roughly half the abstraction's
+  # measured cost to a SAT-solver choice. It also matches Bitwuzla's backend,
+  # so the comparison is about the abstraction rather than about CaDiCaL
+  # against CryptoMiniSat.
+  sat:
+    - --cadical
+  bvabs:
+    - --bv-eq-abstraction=1
+    - --bv-term-abstraction=1
+  # Bitwuzla's --abstraction-bv-size default, applied to STP. STP's own
+  # default for this is 64, which is what the arms without this group get.
+  bv33:
+    - --bv-abstraction-width=33
+  fpabs:
+    # Abstracts mul, div, sqrt and fma by default.
+    #
+    # Worth knowing when reading the results: --bv-term-abstraction also sets
+    # --fp-abstraction-restart-width to 64 (its own default is 0, i.e. never).
+    # Releasing a wide operation therefore reruns the pipeline with it lowered
+    # exactly, so the bit-vector abstraction gets to see the circuit instead
+    # of having it spliced into the running solver. That is the coupling the
+    # two abstractions want, and it is why fp-abstraction is only ever
+    # measured here on top of bvabs.
+    #
+    # That restart threshold stays at 64 in the bv33 arms -- it is set by
+    # --bv-term-abstraction, not by --bv-abstraction-width. So those arms
+    # restart on the same operations as the bv64 arms, but the BV abstraction
+    # then engages on more of the resulting circuit. Making the restart width
+    # track --bv-abstraction-width is a further factor, deliberately not
+    # varied here.
+    - --fp-abstraction=1
+  allops:
+    - --fp-abstraction-ops=all
+
+solvers:
+  # What STP does with no abstraction at all: both --bv-eq-abstraction and
+  # --bv-term-abstraction default to 0, so this is the shipping default and
+  # the answer to "is the baseline below a fair one".
+  - name: stp-exact
+    binary: stp
+    arg_groups: [sat]
+
+  # The baseline the floating-point layer is measured against: the bit-vector
+  # abstraction on at its default width, no floating-point abstraction. Held
+  # on across every STP arm below, so the deltas are the FP layer alone.
+  - name: stp-bv64
+    binary: stp
+    arg_groups: [sat, bvabs]
+
+  - name: stp-fp-bv64
+    binary: stp
+    arg_groups: [sat, bvabs, fpabs]
+
+  - name: stp-fp-bv64-all
+    binary: stp
+    arg_groups: [sat, bvabs, fpabs, allops]
+
+  # Both values ARE Bitwuzla's current defaults; they are written out because
+  # this is a dev build of a moving branch, and the run should not quietly
+  # change meaning if a default flips under us.
+  #
+  # The width-matched STP arms (--bv-abstraction-width=33, mirroring
+  # Bitwuzla's default) were dropped after the 2026-09-07 campaign: at every
+  # width they were level with or behind the 64-bit ones -- 7072 solved
+  # against 7078 without the FP layer, 7110 against 7125 with it -- so they
+  # cost a third of the campaign to say nothing.
+  - name: bitwuzla
+    binary: bitwuzla
+    args:
+      - --abstraction=true
+      - --abstraction-bv-size=33

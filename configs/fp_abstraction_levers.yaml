@@ -1,0 +1,45 @@
+# Two levers measured on twelve binary128 queries to beat both the evaluated
+# build and HEAD: shape lemmas off, and splicing a release instead of
+# restarting the pipeline (the coupling --bv-term-abstraction switches on
+# at width 64). Validated here on every binary64 and binary128 query the
+# evaluated build solved in 1-60 s, all arms on HEAD in one campaign.
+#
+#   ./run_comparison.py configs/fp_abstraction_levers.yaml --file-list LIST --timeout 60 --runs 1 --no-revalidate
+
+name: FP abstraction levers on HEAD (hard-solved 64/128)
+output_prefix: fp_abs_levers
+
+benchmarks:
+  dirs:
+    - /home/avj/fp-abs-results/v3/bench-v3/queries
+
+run:
+  timeout: 60.0
+  runs: 1
+  workers: 12
+
+revalidation:
+  enabled: false
+
+binaries:
+  new: /home/avj/clones/stp/fp_cegar/build-rel-head/stp
+
+arg_groups:
+  base: [--cadical, --bv-eq-abstraction=1, --bv-term-abstraction=1, --fp-abstraction=1]
+
+solvers:
+  - name: default
+    binary: new
+    arg_groups: [base]
+  - name: no-shape
+    binary: new
+    arg_groups: [base]
+    args: [--fp-abstraction-shape=0]
+  - name: splice
+    binary: new
+    arg_groups: [base]
+    args: [--fp-abstraction-restart-width=999999]
+  - name: splice-no-shape
+    binary: new
+    arg_groups: [base]
+    args: [--fp-abstraction-restart-width=999999, --fp-abstraction-shape=0]

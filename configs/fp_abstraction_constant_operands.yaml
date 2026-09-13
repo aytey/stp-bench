@@ -1,0 +1,51 @@
+# The two constant-operand policies, crossed: an operation one of whose
+# operands is a constant is left to the exact lowering by the FP abstraction
+# (--fp-abstraction-constant-operands, off = exact) and by the BV term
+# abstraction (--bv-term-abstraction-constant-operands, off = exact). Both
+# were built on the converted flux-balance QF_FP queries, where every
+# multiplication is by a coefficient and both abstractions lost to plain
+# lowering; this measures the four combinations on KLEE, where products by
+# constants (Horner polynomials in libm code) are where the FP layer wins.
+#
+#   ./run_comparison.py configs/fp_abstraction_constant_operands.yaml \
+#       --file-list ~/fp-abs-results/hard-solved.list --timeout 60 --runs 1 --no-revalidate
+#   ./run_comparison.py configs/fp_abstraction_constant_operands.yaml --no-override \
+#       --dir <latendresse> --timeout 120
+
+name: constant-operand policies (FP x BV)
+output_prefix: fp_abs_const
+
+benchmarks:
+  dirs:
+    - /home/avj/fp-abs-results/v3/bench-v3/queries
+
+run:
+  timeout: 60.0
+  runs: 1
+  workers: 24
+
+revalidation:
+  enabled: false
+
+binaries:
+  stp: /home/avj/clones/stp/fp_cegar/build-rel-head/stp
+
+arg_groups:
+  base: [--cadical, --bv-eq-abstraction=1, --bv-term-abstraction=1, --fp-abstraction=1]
+
+solvers:
+  - name: fp-exact-bv-exact
+    binary: stp
+    arg_groups: [base]
+  - name: fp-abs-bv-exact
+    binary: stp
+    arg_groups: [base]
+    args: [--fp-abstraction-constant-operands=on]
+  - name: fp-exact-bv-abs
+    binary: stp
+    arg_groups: [base]
+    args: [--bv-term-abstraction-constant-operands=1]
+  - name: fp-abs-bv-abs
+    binary: stp
+    arg_groups: [base]
+    args: [--fp-abstraction-constant-operands=on, --bv-term-abstraction-constant-operands=1]

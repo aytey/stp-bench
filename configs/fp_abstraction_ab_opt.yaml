@@ -1,0 +1,51 @@
+# A/B of the evaluated commit (ddef09bd) against the branch head (e2f9640e),
+# both built the same way in fresh worktrees under campaign-builds/:
+# `configure.sh release --lto --tune-native --ninja --auto-download
+# --cadical --cryptominisat` with gcc. Same flags, one file list, one
+# campaign, so both arms see the same load.
+#
+# Two arms per build: the headline configuration, and the same with the
+# release restart moved from width 64 to 128 (splice below 128) -- the one
+# lever that needs no new knob and that the 878-query lever campaign put at
+# PAR2 -13% on binary64 while keeping the binary128 tail.
+#
+#   ./run_comparison.py configs/fp_abstraction_ab_opt.yaml \
+#       --file-list ~/fp-abs-results/hard-solved.list --timeout 60 --runs 1 --no-revalidate
+
+name: STP ddef09bd vs e2f9640e, optimised builds (A/B)
+output_prefix: fp_abs_ab_opt
+
+benchmarks:
+  dirs:
+    - /home/avj/fp-abs-results/v3/bench-v3/queries
+
+run:
+  timeout: 60.0
+  runs: 1
+  workers: 12
+
+revalidation:
+  enabled: false
+
+binaries:
+  old: /home/avj/clones/stp/campaign-builds/fp-cegar-ddef09bd6507/build/stp
+  new: /home/avj/clones/stp/campaign-builds/fp-cegar-e2f9640eafee/build/stp
+
+arg_groups:
+  base: [--cadical, --bv-eq-abstraction=1, --bv-term-abstraction=1, --fp-abstraction=1]
+
+solvers:
+  - name: old-fp-bv64
+    binary: old
+    arg_groups: [base]
+  - name: new-fp-bv64
+    binary: new
+    arg_groups: [base]
+  - name: old-fp-bv64-rw128
+    binary: old
+    arg_groups: [base]
+    args: [--fp-abstraction-restart-width=128]
+  - name: new-fp-bv64-rw128
+    binary: new
+    arg_groups: [base]
+    args: [--fp-abstraction-restart-width=128]

@@ -1,0 +1,40 @@
+# Every STP arm lost binary128 solves between the v3 and v4 campaigns, worst
+# in the arm without the floating-point layer (1643 -> 1619, PAR2 +72%),
+# while Bitwuzla was unchanged. Two things differ between those binaries:
+# the 43 upstream commits the branch was rebased onto, and
+# --bv-eq-abstraction-constant-side, which did not exist when v3 ran and
+# which defaults to leaving an equality against a constant exact.
+#
+# Three arms in the bit-vector configuration, so the floating-point layer is
+# out of the picture: old is v3's behaviour, old-eq is v4's binary with the
+# equality policy turned back off, and new is v4's. old -> old-eq is what
+# upstream did; old-eq -> new is what the policy did.
+name: binary128 regression, v3 against v4
+output_prefix: b128_bisect
+
+benchmarks:
+  dirs:
+    - /home/avj/fp-abs-results/v4/bench-v3/queries
+
+run:
+  timeout: 60.0
+  runs: 3
+  workers: 18
+
+revalidation:
+  enabled: false
+
+binaries:
+  old: /home/avj/clones/stp/campaign-builds/fp-cegar-8072e1643d1b/build/stp
+  new: /home/avj/clones/stp/campaign-builds/fp-cegar-4c4da0a4ae1e/build/stp
+
+solvers:
+  - name: old
+    binary: old
+    args: [--cadical, --bv-eq-abstraction=1, --bv-term-abstraction=1]
+  - name: old-eq
+    binary: new
+    args: [--cadical, --bv-eq-abstraction=1, --bv-term-abstraction=1, --bv-eq-abstraction-constant-side=1]
+  - name: new
+    binary: new
+    args: [--cadical, --bv-eq-abstraction=1, --bv-term-abstraction=1]
