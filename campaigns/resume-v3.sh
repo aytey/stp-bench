@@ -1,0 +1,38 @@
+#!/bin/bash
+# The tail of recapture-v3.sh, from the binding check on: for resuming once
+# the capture, inventory and curation have already produced bench-v3.
+set -eu
+R=/home/avj/fp-abs-results/v3
+P=/home/avj/clones/fp-abs-paper
+B=/home/avj/clones/stp/benchmark-scripts
+M=/mnt/baranem
+workers=18
+mkdir -p $R
+stamp() { echo "=== $1: $(date '+%F %T') ==="; }
+
+stamp "bits bindings in bench-v3 (both counts must be 0)"
+python3 $P/scripts/check_bits_bindings.py $M/fp-benchmarks/bench-v3/queries $M/fp-benchmarks/bench-v3/manifest.tsv || { echo "BITS CHECK FAILED -- stopping"; exit 1; }
+rm -rf $R/bench-v3 && cp -r $M/fp-benchmarks/bench-v3 $R/bench-v3 && echo "corpus copied to $R/bench-v3 ($(ls $R/bench-v3/queries | wc -l) queries)"
+Q=$R/bench-v3/queries; MAN=$R/bench-v3/manifest.tsv
+
+stamp "main campaign: seven arms, three runs, 60 s + revalidation"
+cd $B && python3 ./run_comparison.py configs/fp_abstraction_vs_bitwuzla.yaml --no-override --dir $Q --workers ${workers} --output $R/fp_abs_vs_bwz.csv --force > $R/main.log 2>&1
+tail -3 $R/main.log
+
+stamp "stats pass: headline configuration with -s"
+rm -rf $R/stats-fp-bv64
+python3 $P/scripts/collect_stats.py /home/avj/clones/stp/campaign-builds/fp-cegar-4c4da0a4ae1e/build/stp $Q $R/stats-fp-bv64 --workers 12 --timeout 120 \
+  -- --cadical --bv-eq-abstraction=1 --bv-term-abstraction=1 --fp-abstraction=1 > $R/stats.log 2>&1
+python3 $P/scripts/parse_stats.py $R/stats-fp-bv64 $MAN $R --timeout 120 | tail -2
+
+stamp "ablations"
+cd $B && python3 ./run_comparison.py configs/fp_abstraction_ablations.yaml --no-override --dir $Q --workers ${workers} --output $R/fp_abs_ablate.csv --force > $R/ablate.log 2>&1
+tail -2 $R/ablate.log
+
+stamp "regenerate the draft's data"
+cd $P && python3 scripts/make_plot_data.py $R/fp_abs_vs_bwz.csv $R/fp_abs_vs_bwz_revalidation.csv $MAN data \
+  && python3 scripts/parse_stats.py $R/stats-fp-bv64 $MAN data --timeout 120 > /dev/null \
+  && python3 scripts/make_ablation_rows.py $R/fp_abs_ablate.csv $MAN data \
+  && lualatex -interaction=nonstopmode -halt-on-error main.tex > build1.log 2>&1 && lualatex -interaction=nonstopmode -halt-on-error main.tex > build2.log 2>&1 \
+  && echo "draft rebuilt: $(pdfinfo main.pdf | grep Pages)"
+stamp "all done"
