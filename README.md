@@ -1,5 +1,7 @@
 # STP benchmark scripts
 
+> Part of the [floating-point benchmark work](https://github.com/aytey/fp-repro): that repository pins this one with the KLEE fork, the corpus, the replay harness and STP, and has the build recipe and the steps in order.
+
 Run solvers over an SMT-LIB corpus, time them, and compare the results.
 
 ```sh
